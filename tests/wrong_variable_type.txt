@@ -1,0 +1,6 @@
+fn Say Hello() -> i32 {
+    S = &hello_string
+    puts(S)
+    S = 123
+    puts(S)
+}

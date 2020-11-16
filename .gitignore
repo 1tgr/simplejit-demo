@@ -1,10 +1,10 @@
 *.bk
-*.swp
 *.swo
+*.swp
 *.swx
-tags
-target
-Cargo.lock
 .*.rustfmt
 cranelift.dbg*
+flamegraph.svg
 rusty-tags.*
+tags
+target

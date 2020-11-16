@@ -1,34 +1,62 @@
-/// The AST node for expressions.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum ArithmeticKind {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum ComparisonKind {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Expr {
-    Literal(String),
-    Identifier(String),
-    Assign(String, Box<Expr>),
-    Eq(Box<Expr>, Box<Expr>),
-    Ne(Box<Expr>, Box<Expr>),
-    Lt(Box<Expr>, Box<Expr>),
-    Le(Box<Expr>, Box<Expr>),
-    Gt(Box<Expr>, Box<Expr>),
-    Ge(Box<Expr>, Box<Expr>),
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Div(Box<Expr>, Box<Expr>),
-    IfElse(Box<Expr>, Vec<Expr>, Vec<Expr>),
-    WhileLoop(Box<Expr>, Vec<Expr>),
+    Arithmetic(Box<Expr>, ArithmeticKind, Box<Expr>),
+    Assign(Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
+    Comparison(Box<Expr>, ComparisonKind, Box<Expr>),
+    Deref(Box<Expr>),
     GlobalDataAddr(String),
+    Identifier(String),
+    IfElse(Box<Expr>, Vec<Expr>, Vec<Expr>),
+    Index(Box<Expr>, Box<Expr>),
+    Literal(i32),
+    WhileLoop(Box<Expr>, Vec<Expr>),
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum Type {
+    I32,
+    Unit,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Function {
+    pub params: Vec<(String, Type)>,
+    pub return_ty: Type,
+    pub stmts: Vec<Expr>,
 }
 
 peg::parser!(pub grammar parser() for str {
-    pub rule function() -> (String, Vec<String>, String, Vec<Expr>)
-        = [' ' | '\t' | '\n']* "fn" _ name:identifier() _
-        "(" params:((_ i:identifier() _ {i}) ** ",") ")" _
+    pub rule module() -> Vec<(String, Function)>
+        = [' ' | '\t' | '\n']* functions:((_ f:function() { f }) ** ([' ' | '\t' | '\n']*)) [' ' | '\t' | '\n']*  { functions }
+
+    rule function() -> (String, Function)
+        = "fn" _ name:identifier() _
+        "(" params:((_ i:identifier() _ ":" _ t:ty() { (i, t) }) ** ",") ")" _
         "->" _
-        "(" returns:(_ i:identifier() _ {i}) ")" _
+        return_ty:(_ t:ty() { t }) _
         "{" _ "\n"
         stmts:statements()
-        _ "}" _ "\n" _
-        { (name, params, returns, stmts) }
+        _ "}"
+        { (name, Function { params, return_ty, stmts }) }
 
     rule statements() -> Vec<Expr>
         = s:(statement()*) { s }
@@ -39,7 +67,6 @@ peg::parser!(pub grammar parser() for str {
     rule expression() -> Expr
         = if_else()
         / while_loop()
-        / assignment()
         / binary_op()
 
     rule if_else() -> Expr
@@ -53,34 +80,39 @@ peg::parser!(pub grammar parser() for str {
         loop_body:statements() _ "}"
         { Expr::WhileLoop(Box::new(e), loop_body) }
 
-    rule assignment() -> Expr 
-        = i:identifier() _ "=" _ e:expression() {Expr::Assign(i, Box::new(e))}
-
     rule binary_op() -> Expr = precedence!{
-        a:@ _ "==" _ b:(@) { Expr::Eq(Box::new(a), Box::new(b)) }
-        a:@ _ "!=" _ b:(@) { Expr::Ne(Box::new(a), Box::new(b)) }
-        a:@ _ "<"  _ b:(@) { Expr::Lt(Box::new(a), Box::new(b)) }
-        a:@ _ "<=" _ b:(@) { Expr::Le(Box::new(a), Box::new(b)) }
-        a:@ _ ">"  _ b:(@) { Expr::Gt(Box::new(a), Box::new(b)) }
-        a:@ _ ">=" _ b:(@) { Expr::Ge(Box::new(a), Box::new(b)) }
+        a:@ _ "=" _ b:expression() { Expr::Assign(Box::new(a), Box::new(b)) }
         --
-        a:@ _ "+" _ b:(@) { Expr::Add(Box::new(a), Box::new(b)) }
-        a:@ _ "-" _ b:(@) { Expr::Sub(Box::new(a), Box::new(b)) }
+        a:@ _ "==" _ b:(@) { Expr::Comparison(Box::new(a), ComparisonKind::Eq, Box::new(b)) }
+        a:@ _ "!=" _ b:(@) { Expr::Comparison(Box::new(a), ComparisonKind::Ne, Box::new(b)) }
+        a:@ _ "<"  _ b:(@) { Expr::Comparison(Box::new(a), ComparisonKind::Lt, Box::new(b)) }
+        a:@ _ "<=" _ b:(@) { Expr::Comparison(Box::new(a), ComparisonKind::Le, Box::new(b)) }
+        a:@ _ ">"  _ b:(@) { Expr::Comparison(Box::new(a), ComparisonKind::Gt, Box::new(b)) }
+        a:@ _ ">=" _ b:(@) { Expr::Comparison(Box::new(a), ComparisonKind::Ge, Box::new(b)) }
         --
-        a:@ _ "*" _ b:(@) { Expr::Mul(Box::new(a), Box::new(b)) }
-        a:@ _ "/" _ b:(@) { Expr::Div(Box::new(a), Box::new(b)) }
+        a:@ _ "+" _ b:(@) { Expr::Arithmetic(Box::new(a), ArithmeticKind::Add, Box::new(b)) }
+        a:@ _ "-" _ b:(@) { Expr::Arithmetic(Box::new(a), ArithmeticKind::Sub, Box::new(b)) }
         --
+        a:@ _ "*" _ b:(@) { Expr::Arithmetic(Box::new(a), ArithmeticKind::Mul, Box::new(b)) }
+        a:@ _ "/" _ b:(@) { Expr::Arithmetic(Box::new(a), ArithmeticKind::Div, Box::new(b)) }
+        --
+        a:@ _ "[" _ b:expression() _ "]" { Expr::Index(Box::new(a), Box::new(b)) }
         i:identifier() _ "(" args:((_ e:expression() _ {e}) ** ",") ")" { Expr::Call(i, args) }
         i:identifier() { Expr::Identifier(i) }
+        "*" _ a:@ { Expr::Deref(Box::new(a)) }
         l:literal() { l }
     }
 
     rule identifier() -> String
-        = quiet!{ n:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { n.to_owned() } }
+        = quiet!{ n:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_' | ' ']*) { n.trim_end_matches(' ').to_owned() } }
         / expected!("identifier")
 
+    rule ty() -> Type
+        = "i32" { Type::I32 }
+        / "()" { Type::Unit }
+
     rule literal() -> Expr
-        = n:$(['0'..='9']+) { Expr::Literal(n.to_owned()) }
+        = n:$(['0'..='9']+) { Expr::Literal(n.parse().unwrap()) }
         / "&" i:identifier() { Expr::GlobalDataAddr(i) }
 
     rule _() =  quiet!{[' ' | '\t']*}

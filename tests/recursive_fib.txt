@@ -1,0 +1,18 @@
+fn Recursive Fib(n: i32) -> i32 {
+    if n == 0 {
+        Result = 0
+        Result
+    } else {
+        if n == 1 {
+            Result = 1
+            Result
+        } else {
+            Result = Recursive Fib Inner(n) 
+            Result
+        }
+    }
+}
+
+fn Recursive Fib Inner(n: i32) -> i32 {
+    Recursive Fib(n - 1) + Recursive Fib(n - 2)
+}

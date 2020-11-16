@@ -1,0 +1,48 @@
+function u0:0(i32 [%23], i64 fp [%21], i64 csr [%19]) -> i32 [%16], i64 fp [%21], i64 csr [%19] system_v {
+    ss0 = incoming_arg 24, offset -24
+
+                                block0(v0: i32 [%23], v20: i64 [%21], v21: i64 [%19]):
+[95#50]                             x86_push v20
+[20#8089]                           copy_special %20 -> %21
+[95#50]                             x86_push v21
+[8#b8]                              v1 = iconst.i32 0
+[198#39]                            v2 = icmp eq v0, v1
+[341#74]                            brz v2, block2
+[-]                                 fallthrough block1
+
+                                block1:
+[8#b8]                              v4 = iconst.i32 0
+[6#89]                              regmove v4, %16 -> %17
+[325#eb]                            jump block3(v4)
+
+                                block2:
+[8#b8]                              v5 = iconst.i32 1
+[166#29]                            v6 = isub.i32 v0, v5
+[8#b8]                              v7 = iconst.i32 0
+[8#b8]                              v8 = iconst.i32 1
+[-]                                 fallthrough block4(v6, v8, v7)
+
+                                block4(v9: i32 [%23], v17: i32 [%17], v13: i32 [%16]):
+[2#89]                              v12 = copy v17
+[8#b8]                              v10 = iconst.i32 0
+[198#39]                            v11 = icmp ne v9, v10
+[341#74]                            brz v11, block3(v12)
+[-]                                 fallthrough block5
+
+                                block5:
+[2#89]                              v19 = copy.i32 v12
+[166#01]                            v14 = iadd v19, v13
+[8#b8]                              v15 = iconst.i32 1
+[166#29]                            v16 = isub.i32 v9, v15
+[2#89]                              v18 = copy.i32 v12
+[6#89]                              regmove.i32 v12, %17 -> %19
+[6#89]                              regmove v14, %18 -> %17
+[6#89]                              regmove.i32 v12, %19 -> %18
+[325#eb]                            jump block4(v16, v14, v18)
+
+                                block3(v3: i32 [%17]):
+[6#89]                              regmove v3, %17 -> %16
+[97#58]                             v23 = x86_pop.i64 
+[97#58]                             v22 = x86_pop.i64 
+[324#c3]                            return v3, v22, v23
+}

@@ -7,8 +7,21 @@ repository = "https://github.com/CraneStation/simplejit-demo"
 description = "Toy language implemented using cranelift-simplejit"
 edition = "2018"
 
+[[bench]]
+name = "bench"
+harness = false
+
 [dependencies]
-cranelift = "0.68.0"
-cranelift-module = "0.68.0"
-cranelift-simplejit = "0.68.0"
+anyhow = "1"
+cranelift = { version = "0.68", git = "https://github.com/1tgr/wasmtime", branch = "main" }
+cranelift-module = { version = "0.68", git = "https://github.com/1tgr/wasmtime", branch = "main" }
+cranelift-simplejit = { version = "0.68", git = "https://github.com/1tgr/wasmtime", branch = "main" }
+derive_more = "0.99"
+im-rc = "15"
+itertools = "0.9"
+object-pool = "0.5"
 peg = "0.6"
+salsa = { version = "0.16", git = "https://github.com/1tgr/salsa" }
+
+[dev-dependencies]
+criterion = "0.3"

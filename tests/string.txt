@@ -1,0 +1,9 @@
+fn String() -> () {
+    s = strdup(&hello_string)
+    puts(s)
+    *s = 106
+    puts(s)
+    s[1] = 111
+    puts(s)
+    free(s)
+}

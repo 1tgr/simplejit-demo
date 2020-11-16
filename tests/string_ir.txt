@@ -1,0 +1,54 @@
+function u0:0(i64 fp [%21], i64 csr [%31]) -> i64 fp [%21], i64 csr [%31] system_v {
+    ss0 = spill_slot 8, offset -32
+    ss1 = incoming_arg 24, offset -24
+    gv0 = symbol colocated u1:0
+    sig0 = (i64 [%23]) -> i64 [%16] system_v
+    sig1 = (i64 [%23]) -> i32 [%16] system_v
+    sig2 = (i64 [%23]) system_v
+    fn0 = u0:0 sig0
+    fn1 = u0:1 sig1
+    fn2 = u0:2 sig2
+
+                                block0(v25: i64 [%21], v26: i64 [%31]):
+[95#50]                             x86_push v25
+[20#8089]                           copy_special %20 -> %21
+[95#50]                             x86_push v26
+[103#d083]                          adjust_sp_down_imm 8
+[313#80b8]                          v0 = symbol_value.i64 gv0
+[307#80b8]                          v9 = func_addr.i64 fn0
+[6#8089]                            regmove v0, %16 -> %23
+[323#20ff]                          v19 = call_indirect sig0, v9(v0)
+[73#8089]                           v1 = spill v19
+[307#80b8]                          v10 = func_addr.i64 fn1
+[89#808b]                           v20 = fill v1
+[6#8089]                            regmove v20, %31 -> %23
+[323#20ff]                          v2 = call_indirect sig1, v10(v20)
+[8#b8]                              v11 = iconst.i32 106
+[15#00]                             v3 = ireduce.i8 v11
+[17#4b6]                            v12 = uextend.i32 v3
+[89#808b]                           v21 = fill v1
+[58#88]                             istore8 v12, v21
+[307#80b8]                          v13 = func_addr.i64 fn1
+[89#808b]                           v22 = fill v1
+[6#8089]                            regmove v22, %31 -> %23
+[323#20ff]                          v4 = call_indirect sig1, v13(v22)
+[8#b8]                              v14 = iconst.i32 111
+[15#00]                             v5 = ireduce.i8 v14
+[8#b8]                              v6 = iconst.i64 1
+[89#808b]                           v18 = fill v1
+[167#8001]                          v7 = iadd v18, v6
+[17#4b6]                            v15 = uextend.i32 v5
+[58#88]                             istore8 v15, v7
+[307#80b8]                          v16 = func_addr.i64 fn1
+[89#808b]                           v23 = fill v1
+[6#8089]                            regmove v23, %31 -> %23
+[323#20ff]                          v8 = call_indirect sig1, v16(v23)
+[307#80b8]                          v17 = func_addr.i64 fn2
+[89#808b]                           v24 = fill v1
+[6#8089]                            regmove v24, %31 -> %23
+[323#20ff]                          call_indirect sig2, v17(v24)
+[103#8083]                          adjust_sp_up_imm 8
+[97#58]                             v28 = x86_pop.i64 
+[97#58]                             v27 = x86_pop.i64 
+[324#c3]                            return v27, v28
+}

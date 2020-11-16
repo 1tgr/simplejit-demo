@@ -1,0 +1,16 @@
+fn Foo(a: i32, b: i32) -> i32 {
+    c = if a != 0 {
+        Bar(b)
+    } else {
+        50
+    }
+    c + 2
+}
+
+fn Bar(b: i32) -> i32 {
+    if b != 0 {
+        30
+    } else {
+        40
+    }
+}
