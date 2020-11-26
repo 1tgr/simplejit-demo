@@ -1,21 +1,24 @@
 use crate::ast::*;
 use crate::intern::Intern;
+use crate::lower::LowerExt;
 use crate::pretty::PrettyExt;
-use crate::Result;
+use crate::{Lower, Result};
 use std::collections::HashMap;
 use std::convert::TryInto;
 
 pub struct UnifyExprContext<'a, DB: ?Sized> {
     db: &'a DB,
+    function_name: IdentId,
     result: HashMap<ExprId, TypeId>,
     ty_bindings: HashMap<i32, TypeId>,
     index: i32,
 }
 
-impl<'a, DB: Intern + ?Sized> UnifyExprContext<'a, DB> {
-    pub fn new(db: &'a DB) -> Self {
+impl<'a, DB: Lower + ?Sized> UnifyExprContext<'a, DB> {
+    pub fn new(db: &'a DB, function_name: IdentId) -> Self {
         Self {
             db,
+            function_name,
             result: HashMap::new(),
             ty_bindings: HashMap::new(),
             index: 0,
@@ -30,7 +33,7 @@ impl<'a, DB: Intern + ?Sized> UnifyExprContext<'a, DB> {
 
             let ty = match ty {
                 Type::Number => Type::Integer(Integer { signed: true, bits: 32 }),
-                Type::Var(_) => panic!("didn't expect type variable to survive unification: {}", db.pretty_print_expr(expr)),
+                Type::Var(_) => panic!("didn't expect type variable to survive unification: {}", db.pretty_print_expr(self.function_name, expr)),
                 _ => ty,
             };
 
@@ -90,13 +93,13 @@ struct UnifyExprVisitor<'a, 'b, DB: ?Sized> {
     ty: TypeId,
 }
 
-impl<'a, 'b, DB: Intern + ?Sized> UnifyExprVisitor<'a, 'b, DB> {
+impl<'a, 'b, DB: Lower + ?Sized> UnifyExprVisitor<'a, 'b, DB> {
     fn unify_type(&mut self, b: TypeId) -> Result<TypeId> {
         self.context.unify_type(self.ty, b)
     }
 }
 
-impl<'a, 'b, DB: Intern + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
+impl<'a, 'b, DB: Lower + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
     type Value = Result<TypeId>;
 
     fn lookup_expr(&self, expr: ExprId) -> Expr {
@@ -138,15 +141,10 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
 
     fn map_call(&mut self, _expr_id: ExprId, expr: Call) -> Result<TypeId> {
         let Call { env, name, args } = expr;
-        let Env { bindings } = self.context.db.lookup_intern_env(env);
-
-        let (_, binding) = bindings
-            .get(&name)
-            .ok_or_else(|| error!("calling undeclared function {}", self.context.db.lookup_intern_ident(name)))?;
-
-        let &Signature { ref param_tys, return_ty } = binding.try_into().map_err(|_| error!("only functions can be called"))?;
+        let (_, binding) = self.context.db.binding(self.context.function_name, env.unwrap(), name)?;
+        let Signature { param_tys, return_ty } = binding.try_into().map_err(|_| error!("only functions can be called"))?;
         ensure_eq!(args.len(), param_tys.len());
-        for (expr, &ty) in args.into_iter().zip(param_tys) {
+        for (expr, ty) in args.into_iter().zip(param_tys) {
             self.context.unify_expr(expr, ty)?;
         }
 
@@ -174,19 +172,14 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
 
     fn map_identifier(&mut self, _expr_id: ExprId, expr: Identifier) -> Result<TypeId> {
         let Identifier { env, name } = expr;
-        let Env { bindings } = self.context.db.lookup_intern_env(env);
-
-        let (_, binding) = bindings
-            .get(&name)
-            .ok_or_else(|| error!("reading from undeclared variable {}", self.context.db.lookup_intern_ident(name)))?;
-
+        let (_, binding) = self.context.db.binding(self.context.function_name, env.unwrap(), name)?;
         match binding {
             Binding::Param(binding) => {
-                let &Param { index: _, ty: param_ty } = binding;
+                let Param { index: _, ty: param_ty } = binding;
                 self.unify_type(param_ty)
             }
             Binding::Variable(binding) => {
-                let &Variable { decl_expr } = binding;
+                let Variable { decl_expr } = binding;
                 self.context.unify_expr(decl_expr, self.ty)?;
                 Ok(self.ty)
             }
@@ -214,7 +207,12 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
     }
 
     fn map_scope(&mut self, _expr_id: ExprId, expr: Scope) -> Result<TypeId> {
-        let Scope { scope_env: _, name: _, body } = expr;
+        let Scope {
+            scope_env: _,
+            decl_name: _,
+            decl_expr: _,
+            body,
+        } = expr;
         self.context.unify_expr(body, self.ty)?;
         Ok(self.ty)
     }

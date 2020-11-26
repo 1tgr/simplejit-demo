@@ -15,7 +15,7 @@ pub trait Parse: Source + Intern {
     fn function(&self, name: IdentId) -> Result<Function>;
     fn function_body(&self, name: IdentId) -> Result<ExprId>;
     fn function_signature(&self, name: IdentId) -> Result<Signature>;
-    fn global_env(&self) -> Result<EnvId>;
+    fn global_env(&self) -> Result<Env>;
 }
 
 fn module(db: &dyn Parse) -> Result<Rc<HashMap<IdentId, Item>>> {
@@ -81,9 +81,7 @@ fn function_signature(db: &dyn Parse, name: IdentId) -> Result<Signature> {
     Ok(signature)
 }
 
-fn global_env(db: &dyn Parse) -> Result<EnvId> {
-    let decl_env = db.empty_env();
-
+fn global_env(db: &dyn Parse) -> Result<Env> {
     let bindings = db
         .module()?
         .iter()
@@ -105,9 +103,9 @@ fn global_env(db: &dyn Parse) -> Result<EnvId> {
                 }
             };
 
-            (name, (decl_env, binding))
+            (name, (EnvId::GLOBAL, binding))
         })
         .collect();
 
-    Ok(db.intern_env(Env { bindings }))
+    Ok(Env { bindings })
 }

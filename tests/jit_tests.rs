@@ -11,7 +11,8 @@ fn do_test_pretty(source_text: &str, pretty_text: &str) -> Result<()> {
     let mut actual_pretty_text = String::new();
     for name in db.function_names()? {
         let mut function = db.function(name)?;
-        function.body = db.lower_function(name)?;
+        let (_, body) = db.lower_function(name)?;
+        function.body = body;
         write!(&mut actual_pretty_text, "{}", db.pretty_print_function(name, &function))?;
     }
 

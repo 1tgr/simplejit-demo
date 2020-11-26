@@ -1,23 +1,23 @@
 fn Recursive Fib(n: i32) -> i32 {
-    if n@1 == 0 {
+    if n@2 == 0 {
         {
-            /* let */ Result@2 = 0
-            Result@2
+            /* let */ Result@3 = 0
+            Result@3
         }
     else {
-        if n@1 == 1 {
+        if n@2 == 1 {
             {
-                /* let */ Result@2 = 1
-                Result@2
+                /* let */ Result@4 = 1
+                Result@4
             }
         else {
             {
-                /* let */ Result@2 = Recursive Fib Inner@0(n@1)
-                Result@2
+                /* let */ Result@5 = Recursive Fib Inner@1(n@2)
+                Result@5
             }
         }
     }
 }
 fn Recursive Fib Inner(n: i32) -> i32 {
-    Recursive Fib@0(n@1 - 1) + Recursive Fib@0(n@1 - 2)
+    Recursive Fib@1(n@2 - 1) + Recursive Fib@1(n@2 - 2)
 }

@@ -1,5 +1,4 @@
-use crate::ast::binding::{Binding, Variable};
-use crate::ast::{ArithmeticKind, ComparisonKind, Env, EnvId, IdentId};
+use crate::ast::{ArithmeticKind, ComparisonKind, EnvId, IdentId};
 use derive_more::{Display, TryInto};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
@@ -85,16 +84,14 @@ impl Block {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Call {
-    pub env: EnvId,
+    pub env: Option<EnvId>,
     pub name: IdentId,
     pub args: Vec<ExprId>,
 }
 
 impl Call {
     pub fn walk<V: ExprVisitor + ?Sized>(self, visitor: &mut V) -> Result<(), V::Error> {
-        let Self { env, name: _, args } = self;
-        visitor.visit_env(env)?;
-
+        let Self { env: _, name: _, args } = self;
         for expr in args {
             visitor.visit_expr(expr)?;
         }
@@ -103,8 +100,6 @@ impl Call {
     }
 
     pub fn transform<T: ExprTransform + ?Sized>(mut self, transform: &mut T) -> Result<Expr, T::Error> {
-        self.env = transform.transform_env(self.env)?;
-
         for expr in self.args.iter_mut() {
             *expr = transform.transform_expr(*expr)?;
         }
@@ -171,19 +166,16 @@ impl GlobalDataAddr {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Identifier {
-    pub env: EnvId,
+    pub env: Option<EnvId>,
     pub name: IdentId,
 }
 
 impl Identifier {
-    pub fn walk<V: ExprVisitor + ?Sized>(self, visitor: &mut V) -> Result<(), V::Error> {
-        let Self { env, name: _name } = self;
-        visitor.visit_env(env)?;
+    pub fn walk<V: ExprVisitor + ?Sized>(self, _visitor: &mut V) -> Result<(), V::Error> {
         Ok(())
     }
 
-    pub fn transform<T: ExprTransform + ?Sized>(mut self, transform: &mut T) -> Result<Expr, T::Error> {
-        self.env = transform.transform_env(self.env)?;
+    pub fn transform<T: ExprTransform + ?Sized>(self, _transform: &mut T) -> Result<Expr, T::Error> {
         Ok(Expr::Identifier(self))
     }
 }
@@ -252,34 +244,26 @@ impl Literal {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Scope {
     pub scope_env: EnvId,
-    pub name: IdentId,
+    pub decl_name: IdentId,
+    pub decl_expr: ExprId,
     pub body: ExprId,
 }
 
 impl Scope {
     pub fn walk<V: ExprVisitor + ?Sized>(self, visitor: &mut V) -> Result<(), V::Error> {
-        let Self { scope_env, name, body } = self;
-        visitor.visit_env(scope_env)?;
-
-        let Env { bindings } = visitor.lookup_env(scope_env);
-        if let (_, Binding::Variable(binding)) = &bindings[&name] {
-            let &Variable { decl_expr } = binding;
-            visitor.visit_expr(decl_expr)?;
-        }
-
+        let Self {
+            scope_env: _,
+            decl_name: _,
+            decl_expr,
+            body,
+        } = self;
+        visitor.visit_expr(decl_expr)?;
         visitor.visit_expr(body)?;
         Ok(())
     }
 
     pub fn transform<T: ExprTransform + ?Sized>(mut self, transform: &mut T) -> Result<Expr, T::Error> {
-        self.scope_env = transform.transform_env(self.scope_env)?;
-
-        let Env { mut bindings } = transform.lookup_env(self.scope_env);
-        if let (_, Binding::Variable(binding)) = &mut bindings[&self.name] {
-            binding.decl_expr = transform.transform_expr(binding.decl_expr)?;
-            self.scope_env = transform.intern_env(Env { bindings });
-        }
-
+        self.decl_expr = transform.transform_expr(self.decl_expr)?;
         self.body = transform.transform_expr(self.body)?;
         Ok(Expr::Scope(self))
     }
@@ -346,7 +330,6 @@ macro_rules! expr_enum {
             type Error;
 
             fn lookup_expr(&self, expr: ExprId) -> Expr;
-            fn lookup_env(&self, env: EnvId) -> Env;
 
             $(
                 #[allow(unused_variables)]
@@ -358,21 +341,14 @@ macro_rules! expr_enum {
             fn visit_expr(&mut self, expr: ExprId) -> Result<(), Self::Error> {
                 self.lookup_expr(expr).walk(expr, self)
             }
-
-            #[allow(unused_variables)]
-            fn visit_env(&mut self, env: EnvId) -> Result<(), Self::Error> {
-                Ok(())
-            }
         }
 
         pub trait ExprTransform {
             type Error;
 
             fn lookup_expr(&self, expr: ExprId) -> Expr;
-            fn lookup_env(&self, env: EnvId) -> Env;
 
             fn intern_expr(&self, expr: Expr) -> ExprId;
-            fn intern_env(&self, env: Env) -> EnvId;
 
             $(
                 #[allow(unused_variables)]
@@ -383,10 +359,6 @@ macro_rules! expr_enum {
 
             fn transform_expr(&mut self, expr: ExprId) -> Result<ExprId, Self::Error> {
                 self.lookup_expr(expr).transform(expr, self).map(|expr| self.intern_expr(expr))
-            }
-
-            fn transform_env(&mut self, env: EnvId) -> Result<EnvId, Self::Error> {
-                Ok(env)
             }
         }
 

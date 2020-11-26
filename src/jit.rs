@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::frontend::{ArithmeticKind, ComparisonKind};
-use crate::lower::Lower;
+use crate::lower::{Lower, LowerExt};
 use crate::parse::Parse;
 use crate::target::{Target, TargetExt};
 use crate::type_ck::TypeCk;
@@ -99,7 +99,7 @@ fn clif_data_id(db: &dyn Jit, name: IdentId) -> Result<ClifDataId> {
 
 fn clif_ctx(db: &dyn Jit, name: IdentId) -> Result<Context> {
     let signature = db.function_signature(name)?;
-    let body = db.lower_function(name)?;
+    let (_, body) = db.lower_function(name)?;
     let mut ctx = ClifContext::new();
     ctx.func.signature = db.clif_signature(signature.clone());
 
@@ -118,7 +118,7 @@ fn clif_ctx(db: &dyn Jit, name: IdentId) -> Result<Context> {
     };
 
     let expr_types = db.unify_function(name)?;
-    let return_value = FunctionTranslator::new(db, &mut builder, param_values, &expr_types).map_expr(body)?;
+    let return_value = FunctionTranslator::new(db, name, &mut builder, param_values, &expr_types).map_expr(body)?;
     builder.ins().return_(return_value.as_ref().map_or(&[], slice::from_ref));
     builder.finalize();
 
@@ -140,6 +140,7 @@ fn clif_ctx(db: &dyn Jit, name: IdentId) -> Result<Context> {
 
 struct FunctionTranslator<'a, 'b> {
     db: &'a dyn Jit,
+    function_name: IdentId,
     builder: &'a mut FunctionBuilder<'b>,
     param_values: Vec<Value>,
     expr_types: &'a HashMap<ExprId, TypeId>,
@@ -149,9 +150,10 @@ struct FunctionTranslator<'a, 'b> {
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
-    fn new(db: &'a dyn Jit, builder: &'a mut FunctionBuilder<'b>, param_values: Vec<Value>, expr_types: &'a HashMap<ExprId, TypeId>) -> Self {
+    fn new(db: &'a dyn Jit, function_name: IdentId, builder: &'a mut FunctionBuilder<'b>, param_values: Vec<Value>, expr_types: &'a HashMap<ExprId, TypeId>) -> Self {
         Self {
             db,
+            function_name,
             builder,
             param_values,
             expr_types,
@@ -161,22 +163,21 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         }
     }
 
-    fn translate_variable(&mut self, env: EnvId, name: IdentId) -> Option<ClifVariable> {
-        let Env { bindings } = self.db.lookup_intern_env(env);
-        let &(decl_env, ref binding) = &bindings[&name];
+    fn translate_variable(&mut self, env: EnvId, name: IdentId) -> Result<Option<ClifVariable>> {
+        let (decl_env, binding) = self.db.binding(self.function_name, env, name)?;
 
         if let Some(&variable) = self.clif_variables.get(&(decl_env, name)) {
-            return variable;
+            return Ok(variable);
         }
 
         let (value, ty) = match binding {
             Binding::Param(binding) => {
-                let &Param { index, ty } = binding;
+                let Param { index, ty } = binding;
                 (Some(self.param_values[index]), ty)
             }
 
             Binding::Variable(binding) => {
-                let &Variable { decl_expr } = binding;
+                let Variable { decl_expr } = binding;
                 (None, self.expr_types[&decl_expr])
             }
 
@@ -195,7 +196,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
         });
 
         self.clif_variables.insert((decl_env, name), variable);
-        variable
+        Ok(variable)
     }
 }
 
@@ -237,7 +238,7 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
             Expr::Identifier(expr) => {
                 let Identifier { env, name } = expr;
                 if let Some(value) = value {
-                    let variable = self.translate_variable(env, name).unwrap();
+                    let variable = self.translate_variable(env.unwrap(), name)?.unwrap();
                     self.builder.def_var(variable, value);
                 }
             }
@@ -271,10 +272,9 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
 
     fn map_call(&mut self, expr_id: ExprId, expr: Call) -> Result<Option<Value>> {
         let Call { env, name, args } = expr;
-        let Env { bindings } = self.db.lookup_intern_env(env);
-        let &(decl_env, ref binding) = &bindings[&name];
+        let (decl_env, binding) = self.db.binding(self.function_name, env.unwrap(), name)?;
 
-        let func = match binding.clone() {
+        let func = match binding {
             Binding::Extern(signature) => self.db.clif_func_id(true, name, signature)?,
             Binding::Function(signature) => self.db.clif_func_id(false, name, signature)?,
             Binding::Param(_) | Binding::Variable(_) => panic!("only functions can be called"),
@@ -337,7 +337,7 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
 
     fn map_identifier(&mut self, _expr_id: ExprId, expr: Identifier) -> Result<Option<Value>> {
         let Identifier { env, name } = expr;
-        Ok(self.translate_variable(env, name).map(|variable| self.builder.use_var(variable)))
+        Ok(self.translate_variable(env.unwrap(), name)?.map(|variable| self.builder.use_var(variable)))
     }
 
     fn map_if_else(&mut self, expr_id: ExprId, expr: IfElse) -> Result<Option<Value>> {
@@ -385,15 +385,16 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
     }
 
     fn map_scope(&mut self, _expr_id: ExprId, expr: Scope) -> Result<Option<Value>> {
-        let Scope { scope_env, name, body } = expr;
-        let Env { bindings } = self.db.lookup_intern_env(scope_env);
+        let Scope {
+            scope_env,
+            decl_name,
+            decl_expr,
+            body,
+        } = expr;
 
-        if let (_, Binding::Variable(variable)) = &bindings[&name] {
-            let &Variable { decl_expr } = variable;
-            if let Some(value) = self.map_expr(decl_expr)? {
-                let variable = self.translate_variable(scope_env, name).unwrap();
-                self.builder.def_var(variable, value);
-            }
+        if let Some(value) = self.map_expr(decl_expr)? {
+            let variable = self.translate_variable(scope_env, decl_name)?.unwrap();
+            self.builder.def_var(variable, value);
         }
 
         self.map_expr(body)

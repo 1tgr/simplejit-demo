@@ -1,13 +1,16 @@
 use crate::ast::*;
 use crate::frontend::{ArithmeticKind, ComparisonKind};
 use crate::intern::Intern;
+use crate::lower::LowerExt;
+use crate::Lower;
 use itertools::{Itertools, Position};
 use std::fmt;
 
 pub trait PrettyExt {
-    fn pretty_print_expr(&self, expr: ExprId) -> PrettyPrintExpr<'_, Self> {
+    fn pretty_print_expr(&self, function_name: IdentId, expr: ExprId) -> PrettyPrintExpr<'_, Self> {
         PrettyPrintExpr {
             db: self,
+            function_name,
             indent: Indent { count: 0 },
             expr,
         }
@@ -22,7 +25,7 @@ pub trait PrettyExt {
     }
 }
 
-impl<T: Intern + ?Sized> PrettyExt for T {}
+impl<T: ?Sized> PrettyExt for T {}
 
 #[derive(Clone, Copy)]
 struct Indent {
@@ -41,6 +44,7 @@ impl<'a> fmt::Display for Indent {
 
 pub struct PrettyPrintExpr<'a, DB: ?Sized> {
     db: &'a DB,
+    function_name: IdentId,
     indent: Indent,
     expr: ExprId,
 }
@@ -58,7 +62,7 @@ impl<'a, DB: ?Sized> PrettyPrintExpr<'a, DB> {
     }
 }
 
-impl<'a, DB: Intern + ?Sized> fmt::Display for PrettyPrintExpr<'a, DB> {
+impl<'a, DB: Lower + ?Sized> fmt::Display for PrettyPrintExpr<'a, DB> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         PrettyPrintExprVisitor { p: self, f }.visit_expr(self.expr)
     }
@@ -69,15 +73,11 @@ struct PrettyPrintExprVisitor<'a, 'b, DB: ?Sized> {
     f: &'a mut fmt::Formatter<'b>,
 }
 
-impl<'a, 'b, DB: Intern + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b, DB> {
+impl<'a, 'b, DB: Lower + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b, DB> {
     type Error = fmt::Error;
 
     fn lookup_expr(&self, expr: ExprId) -> Expr {
         self.p.db.lookup_intern_expr(expr)
-    }
-
-    fn lookup_env(&self, env: EnvId) -> Env {
-        self.p.db.lookup_intern_env(env)
     }
 
     fn visit_arithmetic(&mut self, _expr_id: ExprId, expr: Arithmetic) -> fmt::Result {
@@ -124,8 +124,7 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b,
 
     fn visit_call(&mut self, _expr_id: ExprId, expr: Call) -> fmt::Result {
         let Call { env, name, args } = expr;
-        let Env { bindings } = self.p.db.lookup_intern_env(env);
-        let &(decl_env, _) = &bindings[&name];
+        let (decl_env, _) = self.p.db.binding(self.p.function_name, env.unwrap(), name).unwrap();
         write!(
             self.f,
             "{}@{}({})",
@@ -163,12 +162,14 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b,
     fn visit_identifier(&mut self, _expr_id: ExprId, expr: Identifier) -> fmt::Result {
         let Identifier { env, name } = expr;
         write!(self.f, "{}@", self.p.db.lookup_intern_ident(name))?;
-
-        let Env { bindings } = self.p.db.lookup_intern_env(env);
-        if let Some(&(decl_env, _)) = bindings.get(&name) {
-            write!(self.f, "{}", decl_env)
+        if let Some(env) = env {
+            if let Ok((decl_env, _)) = self.p.db.binding(self.p.function_name, env, name) {
+                write!(self.f, "{}", decl_env)
+            } else {
+                write!(self.f, "???")
+            }
         } else {
-            self.f.write_str("???")
+            write!(self.f, "???")
         }
     }
 
@@ -193,29 +194,22 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b,
     }
 
     fn visit_scope(&mut self, _expr_id: ExprId, expr: Scope) -> fmt::Result {
-        let Scope { scope_env, name, body } = expr;
-        let Env { bindings } = self.p.db.lookup_intern_env(scope_env);
-        let &(decl_env, _) = &bindings[&name];
+        let Scope {
+            scope_env: decl_env,
+            decl_name,
+            decl_expr,
+            body,
+        } = expr;
         let p = self.p.enter();
         writeln!(self.f, "{{")?;
-        write!(self.f, "{}/* let */ {}@{} = ", p.indent, self.p.db.lookup_intern_ident(name), decl_env)?;
-
-        let (_, binding) = &bindings[&name];
-        match binding {
-            Binding::Variable(variable) => {
-                let &Variable { decl_expr } = variable;
-                writeln!(self.f, "{}", p.with_expr(decl_expr))?;
-            }
-
-            Binding::Param(param) => {
-                let &Param { index, ty } = param;
-                writeln!(self.f, "<<param {}: {}>>", index, self.p.db.pretty_print_type(ty))?;
-            }
-
-            Binding::Extern(_) => self.f.write_str("<<extern>>")?,
-            Binding::Function(_) => self.f.write_str("<<function>>")?,
-        }
-
+        writeln!(
+            self.f,
+            "{}/* let */ {}@{} = {}",
+            p.indent,
+            self.p.db.lookup_intern_ident(decl_name),
+            decl_env,
+            p.with_expr(decl_expr)
+        )?;
         writeln!(self.f, "{}{}", p.indent, p.with_expr(body))?;
         write!(self.f, "{}}}", self.p.indent)
     }
@@ -235,7 +229,7 @@ pub struct PrettyPrintFunction<'a, DB: ?Sized> {
     function: &'a Function,
 }
 
-impl<'a, DB: Intern + ?Sized> fmt::Display for PrettyPrintFunction<'a, DB> {
+impl<'a, DB: Lower + ?Sized> fmt::Display for PrettyPrintFunction<'a, DB> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let &Function {
             ref signature,
@@ -258,7 +252,12 @@ impl<'a, DB: Intern + ?Sized> fmt::Display for PrettyPrintFunction<'a, DB> {
         let indent = Indent { count: 1 };
 
         {
-            let expr = PrettyPrintExpr { db: self.db, indent, expr: body };
+            let expr = PrettyPrintExpr {
+                db: self.db,
+                function_name: self.name,
+                indent,
+                expr: body,
+            };
             writeln!(f, "{}{}", indent, expr)?;
         }
 

@@ -1,5 +1,5 @@
 fn Bar(b: i32) -> i32 {
-    if b@1 != 0 {
+    if b@2 != 0 {
         30
     else {
         40
@@ -7,8 +7,8 @@ fn Bar(b: i32) -> i32 {
 }
 fn Foo(a: i32, b: i32) -> i32 {
     {
-        /* let */ c@3 = if a@1 != 0 {
-            Bar@0(b@1)
+        /* let */ c@3 = if a@2 != 0 {
+            Bar@1(b@2)
         else {
             50
         }

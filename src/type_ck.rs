@@ -12,8 +12,8 @@ pub trait TypeCk: Lower {
 
 fn unify_function(db: &dyn TypeCk, name: IdentId) -> Result<Rc<HashMap<ExprId, TypeId>>> {
     let Signature { param_tys: _, return_ty } = db.function_signature(name)?;
-    let body = db.lower_function(name)?;
-    let mut context = UnifyExprContext::new(db);
+    let (_, body) = db.lower_function(name)?;
+    let mut context = UnifyExprContext::new(db, name);
     context.unify_expr(body, return_ty)?;
     Ok(Rc::new(context.into_expr_type_map()))
 }

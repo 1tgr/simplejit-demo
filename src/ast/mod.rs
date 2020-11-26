@@ -1,5 +1,6 @@
-use derive_more::Display;
+use derive_more::{Display, From, Into};
 use im_rc::HashMap;
+use std::num::NonZeroU32;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
 #[display(fmt = "{}", "_0")]
@@ -15,18 +16,12 @@ impl salsa::InternKey for IdentId {
     }
 }
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display, From, Into)]
 #[display(fmt = "{}", "_0")]
-pub struct EnvId(salsa::InternId);
+pub struct EnvId(NonZeroU32);
 
-impl salsa::InternKey for EnvId {
-    fn from_intern_id(v: salsa::InternId) -> Self {
-        Self(v)
-    }
-
-    fn as_intern_id(&self) -> salsa::InternId {
-        self.0
-    }
+impl EnvId {
+    pub const GLOBAL: Self = Self(unsafe { NonZeroU32::new_unchecked(1) });
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

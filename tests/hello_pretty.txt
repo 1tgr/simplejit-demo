@@ -1,3 +1,3 @@
 fn Say Hello() -> i32 {
-    puts@0(&hello_string)
+    puts@1(&hello_string)
 }

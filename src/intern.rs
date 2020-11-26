@@ -12,16 +12,11 @@ pub trait Intern {
     #[salsa::interned]
     fn intern_type(&self, ty: Type) -> TypeId;
 
-    #[salsa::interned]
-    fn intern_env(&self, env: Env) -> EnvId;
-
     fn bool_type(&self) -> TypeId;
     fn integer_type(&self, signed: bool, bits: u16) -> TypeId;
     fn number_type(&self) -> TypeId;
     fn pointer_type(&self, pointee: TypeId) -> TypeId;
     fn unit_type(&self) -> TypeId;
-
-    fn empty_env(&self) -> EnvId;
 }
 
 fn bool_type(db: &dyn Intern) -> TypeId {
@@ -44,10 +39,6 @@ fn unit_type(db: &dyn Intern) -> TypeId {
     db.intern_type(Type::Unit)
 }
 
-fn empty_env(db: &dyn Intern) -> EnvId {
-    db.intern_env(Env { bindings: im_rc::HashMap::new() })
-}
-
 pub trait InternExt: Intern {
     fn intern_frontend_expr(&self, expr: frontend::Expr) -> ExprId {
         use frontend::Expr as E;
@@ -66,10 +57,9 @@ pub trait InternExt: Intern {
             }
 
             E::Call(name, args) => {
-                let env = self.empty_env();
                 let name = self.intern_ident(name);
                 let args = args.into_iter().map(|expr| self.intern_frontend_expr(expr)).collect();
-                Expr::Call(Call { env, name, args })
+                Expr::Call(Call { env: None, name, args })
             }
 
             E::Comparison(lhs, op, rhs) => {
@@ -89,9 +79,8 @@ pub trait InternExt: Intern {
             }
 
             E::Identifier(name) => {
-                let env = self.empty_env();
                 let name = self.intern_ident(name);
-                Expr::Identifier(Identifier { env, name })
+                Expr::Identifier(Identifier { env: None, name })
             }
 
             E::IfElse(condition, then_stmts, else_stmts) => {
