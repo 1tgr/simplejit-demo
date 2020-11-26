@@ -12,7 +12,7 @@ fn do_test_pretty(source_text: &str, pretty_text: &str) -> Result<()> {
 
     let mut actual_pretty_text = String::new();
     for name in function_names {
-        let function = db.lower_function(db.global_env()?, name)?;
+        let function = db.lower_function(name)?;
         write!(&mut actual_pretty_text, "{}", db.pretty_print_function(name, &function))?;
     }
 

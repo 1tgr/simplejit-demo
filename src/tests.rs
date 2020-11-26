@@ -1,4 +1,4 @@
-use crate::{Database, Intern, Parse, Result, Source, TargetExt, TypeCk, JIT};
+use crate::{Database, Intern, Result, Source, TargetExt, TypeCk, JIT};
 use std::mem;
 
 fn compile<DB: JIT + ?Sized>(db: &mut DB) -> Result<i32> {
@@ -79,6 +79,7 @@ fn Main() -> i32 {
 #[test]
 fn test_noop_update() -> Result<()> {
     let mut db = Database::default();
+    let name = db.intern_ident("Main".to_owned());
 
     let func1 = {
         db.set_source(String::from(
@@ -89,7 +90,7 @@ fn Main() -> i32 {
 ",
         ));
 
-        db.unify_function(db.global_env()?, db.intern_ident("Main".to_owned()))?
+        db.unify_function(name)?
     };
 
     let func2 = {
@@ -105,7 +106,7 @@ broken
 ",
         ));
 
-        db.unify_function(db.global_env()?, db.intern_ident("Main".to_owned()))?
+        db.unify_function(name)?
     };
 
     assert_eq!(func1, func2);

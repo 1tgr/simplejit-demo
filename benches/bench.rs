@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use simplejit_demo::ast::IdentId;
-use simplejit_demo::{Database, Intern, Parse, Result, Source, TargetExt, TypeCk, JIT};
+use simplejit_demo::{Database, Intern, Result, Source, TargetExt, TypeCk, JIT};
 use std::fmt::Write;
 use std::mem;
 
@@ -90,9 +90,7 @@ fn bench_typeck_big_function(c: &mut Criterion) {
             writeln!(s, "}}")?;
 
             db.set_source(s.clone());
-
-            let env = db.global_env()?;
-            db.unify_function(env, name)?;
+            db.unify_function(name)?;
             counter += 1;
             Ok(()) as Result<()>
         })

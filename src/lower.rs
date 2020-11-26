@@ -6,10 +6,11 @@ use std::result;
 
 #[salsa::query_group(LowerDatabase)]
 pub trait Lower: Parse {
-    fn lower_function(&self, env: EnvId, name: IdentId) -> Result<Function>;
+    fn lower_function(&self, name: IdentId) -> Result<Function>;
 }
 
-fn lower_function(db: &dyn Lower, env: EnvId, name: IdentId) -> Result<Function> {
+fn lower_function(db: &dyn Lower, name: IdentId) -> Result<Function> {
+    let env = db.global_env()?;
     let Env { mut bindings } = db.lookup_intern_env(env);
     let mut function = db.function(name)?;
     for (index, (&name, &ty)) in function.param_names.iter().zip(function.signature.param_tys.iter()).enumerate() {

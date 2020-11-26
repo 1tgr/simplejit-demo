@@ -98,8 +98,7 @@ fn cl_data_id(db: &dyn JIT, name: IdentId) -> Result<ClDataId> {
 }
 
 fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
-    let env = db.global_env()?;
-    let Function { signature, param_names: _, body } = db.lower_function(env, name)?;
+    let Function { signature, param_names: _, body } = db.lower_function(name)?;
     let mut ctx = ClContext::new();
     ctx.func.signature = db.cl_signature(signature.clone());
 
@@ -117,7 +116,7 @@ fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
         builder.block_params(entry_block).to_vec()
     };
 
-    let expr_types = db.unify_function(env, name)?;
+    let expr_types = db.unify_function(name)?;
     let return_value = FunctionTranslator::new(db, &mut builder, param_values, expr_types).map_expr(body)?;
     builder.ins().return_(return_value.as_ref().map_or(&[], slice::from_ref));
     builder.finalize();
