@@ -6,20 +6,21 @@ use std::result;
 
 #[salsa::query_group(LowerDatabase)]
 pub trait Lower: Parse {
-    fn lower_function(&self, name: IdentId) -> Result<Function>;
+    fn lower_function(&self, name: IdentId) -> Result<ExprId>;
 }
 
-fn lower_function(db: &dyn Lower, name: IdentId) -> Result<Function> {
+fn lower_function(db: &dyn Lower, name: IdentId) -> Result<ExprId> {
     let env = db.global_env()?;
     let Env { mut bindings } = db.lookup_intern_env(env);
-    let (mut function, param_names) = db.function(name)?;
-    for (index, (name, &ty)) in param_names.into_iter().zip(function.signature.param_tys.iter()).enumerate() {
+    let Function { signature, param_names, body } = db.function(name)?;
+    let Signature { param_tys, return_ty: _ } = signature;
+    for (index, (name, ty)) in param_names.into_iter().zip(param_tys).enumerate() {
         bindings.insert(name, (env, Binding::Param(Param { index, ty })));
     }
 
     let env = db.intern_env(Env { bindings });
-    function.body = LowerExprTransform { db, env }.transform_expr(function.body)?;
-    Ok(function)
+    let body = LowerExprTransform { db, env }.transform_expr(body)?;
+    Ok(body)
 }
 
 struct LowerExprTransform<'a, DB: ?Sized> {

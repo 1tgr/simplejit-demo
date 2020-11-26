@@ -1,62 +1,17 @@
-use derive_more::Display;
-use derive_more::TryInto;
-use im_rc::HashMap;
-use salsa::InternId;
-
-pub use crate::frontend::{ArithmeticKind, ComparisonKind};
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
-#[display(fmt = "{}", "_0")]
-pub struct IdentId(salsa::InternId);
-
-impl salsa::InternKey for IdentId {
-    fn from_intern_id(v: InternId) -> Self {
-        Self(v)
-    }
-
-    fn as_intern_id(&self) -> InternId {
-        self.0
-    }
-}
+use crate::ast::binding::{Binding, Variable};
+use crate::ast::{ArithmeticKind, ComparisonKind, Env, EnvId, IdentId};
+use derive_more::{Display, TryInto};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
 #[display(fmt = "{}", "_0")]
 pub struct ExprId(salsa::InternId);
 
 impl salsa::InternKey for ExprId {
-    fn from_intern_id(v: InternId) -> Self {
+    fn from_intern_id(v: salsa::InternId) -> Self {
         Self(v)
     }
 
-    fn as_intern_id(&self) -> InternId {
-        self.0
-    }
-}
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
-#[display(fmt = "{}", "_0")]
-pub struct EnvId(salsa::InternId);
-
-impl salsa::InternKey for EnvId {
-    fn from_intern_id(v: InternId) -> Self {
-        Self(v)
-    }
-
-    fn as_intern_id(&self) -> InternId {
-        self.0
-    }
-}
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
-#[display(fmt = "{}", "_0")]
-pub struct TypeId(salsa::InternId);
-
-impl salsa::InternKey for TypeId {
-    fn from_intern_id(v: InternId) -> Self {
-        Self(v)
-    }
-
-    fn as_intern_id(&self) -> InternId {
+    fn as_intern_id(&self) -> salsa::InternId {
         self.0
     }
 }
@@ -349,59 +304,6 @@ impl WhileLoop {
         self.body = transform.transform_expr(self.body)?;
         Ok(Expr::WhileLoop(self))
     }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Function {
-    pub signature: Signature,
-    pub body: ExprId,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Signature {
-    pub param_tys: Vec<TypeId>,
-    pub return_ty: TypeId,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Param {
-    pub index: usize,
-    pub ty: TypeId,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Variable {
-    pub decl_expr: ExprId,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, TryInto)]
-#[try_into(owned, ref, ref_mut)]
-pub enum Binding {
-    Extern(Signature),
-    Function(Signature),
-    Param(Param),
-    Variable(Variable),
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Env {
-    pub bindings: HashMap<IdentId, (EnvId, Binding)>,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Integer {
-    pub signed: bool,
-    pub bits: u16,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum Type {
-    Bool,
-    Integer(Integer),
-    Number,
-    Pointer(TypeId),
-    Unit,
-    Var(i32),
 }
 
 macro_rules! expr_enum {

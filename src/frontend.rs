@@ -34,7 +34,15 @@ pub enum Expr {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
     I32,
+    Pointer(Box<Type>),
+    U8,
     Unit,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Extern {
+    pub params: Vec<(String, Type)>,
+    pub return_ty: Type,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -44,9 +52,32 @@ pub struct Function {
     pub stmts: Vec<Expr>,
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum Item {
+    Extern(Extern),
+    Function(Function),
+}
+
 peg::parser!(pub grammar parser() for str {
-    pub rule module() -> Vec<(String, Function)>
-        = [' ' | '\t' | '\n']* functions:((_ f:function() { f }) ** ([' ' | '\t' | '\n']*)) [' ' | '\t' | '\n']*  { functions }
+    pub rule module() -> Vec<(String, Item)>
+        = [' ' | '\t' | '\n']* items:((_ i:item() { i }) ** ([' ' | '\t' | '\n']*)) [' ' | '\t' | '\n']*  { items }
+
+    rule item() -> (String, Item)
+        = i:extern() {
+            let (name, i) = i;
+            (name, Item::Extern(i))
+        }
+        / i:function() {
+            let (name, i) = i;
+            (name, Item::Function(i))
+        }
+
+    rule extern() -> (String, Extern)
+        = "extern" _ "fn" _ name:identifier() _
+        "(" params:((_ i:identifier() _ ":" _ t:ty() { (i, t) }) ** ",") ")" _
+        "->" _
+        return_ty:(_ t:ty() { t })
+        { (name, Extern { params, return_ty }) }
 
     rule function() -> (String, Function)
         = "fn" _ name:identifier() _
@@ -109,7 +140,9 @@ peg::parser!(pub grammar parser() for str {
 
     rule ty() -> Type
         = "i32" { Type::I32 }
+        / "u8" { Type::U8 }
         / "()" { Type::Unit }
+        / "ptr" _ "<" _ t:ty() _ ">" { Type::Pointer(Box::new(t)) }
 
     rule literal() -> Expr
         = n:$(['0'..='9']+) { Expr::Literal(n.parse().unwrap()) }

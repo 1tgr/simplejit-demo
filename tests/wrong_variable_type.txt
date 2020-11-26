@@ -1,3 +1,5 @@
+extern fn puts(s: ptr<u8>) -> i32
+
 fn Say Hello() -> i32 {
     S = &hello_string
     puts(S)

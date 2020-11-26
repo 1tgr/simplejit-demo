@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::frontend::{ArithmeticKind, ComparisonKind};
 use crate::intern::Intern;
 use itertools::{Itertools, Position};
 use std::fmt;
@@ -12,13 +13,8 @@ pub trait PrettyExt {
         }
     }
 
-    fn pretty_print_function<'a>(&'a self, name: IdentId, function: &'a Function, param_names: &'a [IdentId]) -> PrettyPrintFunction<'a, Self> {
-        PrettyPrintFunction {
-            db: self,
-            name,
-            function,
-            param_names,
-        }
+    fn pretty_print_function<'a>(&'a self, name: IdentId, function: &'a Function) -> PrettyPrintFunction<'a, Self> {
+        PrettyPrintFunction { db: self, name, function }
     }
 
     fn pretty_print_type(&self, ty: TypeId) -> PrettyPrintType<'_, Self> {
@@ -237,16 +233,20 @@ pub struct PrettyPrintFunction<'a, DB: ?Sized> {
     db: &'a DB,
     name: IdentId,
     function: &'a Function,
-    param_names: &'a [IdentId],
 }
 
 impl<'a, DB: Intern + ?Sized> fmt::Display for PrettyPrintFunction<'a, DB> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let &Function { ref signature, body } = self.function;
+        let &Function {
+            ref signature,
+            ref param_names,
+            body,
+        } = self.function;
+
         let &Signature { ref param_tys, return_ty } = signature;
         let name = self.db.lookup_intern_ident(self.name);
 
-        let params = self.param_names.iter().zip(param_tys.iter()).format_with(", ", |(&name, &ty), f| {
+        let params = param_names.iter().zip(param_tys.iter()).format_with(", ", |(&name, &ty), f| {
             let name = self.db.lookup_intern_ident(name);
             let ty = self.db.pretty_print_type(ty);
             f(&format_args!("{}: {}", name, ty))

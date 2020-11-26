@@ -1,3 +1,7 @@
+extern fn puts(s: ptr<u8>) -> i32
+extern fn strdup(s: ptr<u8>) -> ptr<u8>
+extern fn free(s: ptr<u8>) -> ()
+
 fn String() -> () {
     s = strdup(&hello_string)
     puts(s)

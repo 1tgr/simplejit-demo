@@ -98,7 +98,8 @@ fn cl_data_id(db: &dyn JIT, name: IdentId) -> Result<ClDataId> {
 }
 
 fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
-    let Function { signature, body } = db.lower_function(name)?;
+    let signature = db.function_signature(name)?;
+    let body = db.lower_function(name)?;
     let mut ctx = ClContext::new();
     ctx.func.signature = db.cl_signature(signature.clone());
 

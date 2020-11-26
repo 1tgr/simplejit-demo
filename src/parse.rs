@@ -1,97 +1,113 @@
-use crate::ast::{Binding, Env, EnvId, Function, IdentId, Signature};
+use crate::ast::*;
 use crate::frontend::parser;
 use crate::intern::{Intern, InternExt};
 use crate::source::Source;
 use crate::Result;
 use std::collections::HashMap;
+use std::convert::TryInto;
+use std::rc::Rc;
 
 #[salsa::query_group(ParseDatabase)]
 pub trait Parse: Source + Intern {
-    fn module(&self) -> Result<HashMap<IdentId, (Function, Vec<IdentId>)>>;
+    fn module(&self) -> Result<Rc<HashMap<IdentId, Item>>>;
+    fn functions(&self) -> Result<Rc<HashMap<IdentId, Function>>>;
     fn function_names(&self) -> Result<Vec<IdentId>>;
-    fn function(&self, name: IdentId) -> Result<(Function, Vec<IdentId>)>;
+    fn function(&self, name: IdentId) -> Result<Function>;
+    fn function_body(&self, name: IdentId) -> Result<ExprId>;
     fn function_signature(&self, name: IdentId) -> Result<Signature>;
-    fn function_param_names(&self, name: IdentId) -> Result<Vec<IdentId>>;
     fn global_env(&self) -> Result<EnvId>;
 }
 
-fn module(db: &dyn Parse) -> Result<HashMap<IdentId, (Function, Vec<IdentId>)>> {
+fn module(db: &dyn Parse) -> Result<Rc<HashMap<IdentId, Item>>> {
     let input = db.source();
-    let functions = parser::module(&input)?;
+    let items = parser::module(&input)?;
 
-    let functions = functions
+    let items = items
         .into_iter()
-        .map(|(name, f)| {
+        .map(|(name, i)| {
             let name = db.intern_ident(name);
-            let f = db.intern_frontend_function(f);
-            (name, f)
+            let i = db.intern_frontend_item(i);
+            (name, i)
         })
         .collect();
 
-    Ok(functions)
+    Ok(Rc::new(items))
+}
+
+fn functions(db: &dyn Parse) -> Result<Rc<HashMap<IdentId, Function>>> {
+    let items = db.module()?;
+
+    let functions = items
+        .iter()
+        .filter_map(|(&name, item)| {
+            let item = item.try_into().ok()?;
+            Some((name, Function::clone(item)))
+        })
+        .collect();
+
+    Ok(Rc::new(functions))
 }
 
 fn function_names(db: &dyn Parse) -> Result<Vec<IdentId>> {
-    let module = db.module()?;
-    let mut names = module.keys().copied().collect::<Vec<_>>();
+    let functions = db.functions()?;
+    let mut names = functions.keys().copied().collect::<Vec<_>>();
     names.sort_by_key(|&name| db.lookup_intern_ident(name));
     Ok(names)
 }
 
-fn function(db: &dyn Parse, name: IdentId) -> Result<(Function, Vec<IdentId>)> {
-    let mut module = db.module()?;
-    module.remove(&name).ok_or_else(|| error!("undefined function {}", db.lookup_intern_ident(name)))
+fn function(db: &dyn Parse, name: IdentId) -> Result<Function> {
+    let functions = db.functions()?;
+    let function = functions.get(&name).ok_or_else(|| error!("undefined function {}", db.lookup_intern_ident(name)))?;
+    Ok(function.clone())
+}
+
+fn function_body(db: &dyn Parse, name: IdentId) -> Result<ExprId> {
+    let Function {
+        signature: _,
+        param_names: _,
+        body,
+    } = db.function(name)?;
+
+    Ok(body)
 }
 
 fn function_signature(db: &dyn Parse, name: IdentId) -> Result<Signature> {
-    let (function, _) = db.function(name)?;
-    Ok(function.signature)
-}
+    let Function {
+        signature,
+        param_names: _,
+        body: _,
+    } = db.function(name)?;
 
-fn function_param_names(db: &dyn Parse, name: IdentId) -> Result<Vec<IdentId>> {
-    let (_, param_names) = db.function(name)?;
-    Ok(param_names)
+    Ok(signature)
 }
 
 fn global_env(db: &dyn Parse) -> Result<EnvId> {
     let decl_env = db.empty_env();
-    let mut bindings = im_rc::HashMap::new();
-    for name in db.function_names()? {
-        bindings.insert(name, (decl_env, Binding::Function(db.function_signature(name)?)));
-    }
 
-    bindings.insert(
-        db.intern_ident("free".to_owned()),
-        (
-            decl_env,
-            Binding::Extern(Signature {
-                param_tys: vec![db.pointer_type(db.integer_type(false, 8))],
-                return_ty: db.unit_type(),
-            }),
-        ),
-    );
+    let bindings = db
+        .module()?
+        .iter()
+        .map(|(&name, item)| {
+            let binding = match item {
+                Item::Extern(item) => {
+                    let Extern { signature } = item;
+                    Binding::Extern(signature.clone())
+                }
 
-    bindings.insert(
-        db.intern_ident("puts".to_owned()),
-        (
-            decl_env,
-            Binding::Extern(Signature {
-                param_tys: vec![db.pointer_type(db.integer_type(false, 8))],
-                return_ty: db.integer_type(true, 32),
-            }),
-        ),
-    );
+                Item::Function(item) => {
+                    let Function {
+                        signature,
+                        param_names: _,
+                        body: _,
+                    } = item;
 
-    bindings.insert(
-        db.intern_ident("strdup".to_owned()),
-        (
-            decl_env,
-            Binding::Extern(Signature {
-                param_tys: vec![db.pointer_type(db.integer_type(false, 8))],
-                return_ty: db.pointer_type(db.integer_type(false, 8)),
-            }),
-        ),
-    );
+                    Binding::Function(signature.clone())
+                }
+            };
+
+            (name, (decl_env, binding))
+        })
+        .collect();
 
     Ok(db.intern_env(Env { bindings }))
 }

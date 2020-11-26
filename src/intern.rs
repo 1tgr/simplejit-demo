@@ -124,6 +124,8 @@ pub trait InternExt: Intern {
 
         let ty = match ty {
             T::I32 => Type::Integer(Integer { signed: true, bits: 32 }),
+            T::Pointer(ty) => Type::Pointer(self.intern_frontend_type(*ty)),
+            T::U8 => Type::Integer(Integer { signed: false, bits: 8 }),
             T::Unit => Type::Unit,
         };
 
@@ -135,13 +137,27 @@ pub trait InternExt: Intern {
         self.intern_block(stmts)
     }
 
-    fn intern_frontend_function(&self, func: frontend::Function) -> (Function, Vec<IdentId>) {
-        let frontend::Function { params, return_ty, stmts } = func;
-        let (param_names, param_tys) = params.into_iter().map(|(name, ty)| (self.intern_ident(name), self.intern_frontend_type(ty))).unzip();
-        let return_ty = self.intern_frontend_type(return_ty);
-        let body = self.intern_frontend_block(stmts);
-        let signature = Signature { param_tys, return_ty };
-        (Function { signature, body }, param_names)
+    fn intern_frontend_item(&self, item: frontend::Item) -> Item {
+        use frontend::Item as I;
+
+        match item {
+            I::Extern(item) => {
+                let frontend::Extern { params, return_ty } = item;
+                let param_tys = params.into_iter().map(|(_, ty)| self.intern_frontend_type(ty)).collect();
+                let return_ty = self.intern_frontend_type(return_ty);
+                let signature = Signature { param_tys, return_ty };
+                Item::Extern(Extern { signature })
+            }
+
+            I::Function(item) => {
+                let frontend::Function { params, return_ty, stmts } = item;
+                let (param_names, param_tys) = params.into_iter().map(|(name, ty)| (self.intern_ident(name), self.intern_frontend_type(ty))).unzip();
+                let return_ty = self.intern_frontend_type(return_ty);
+                let body = self.intern_frontend_block(stmts);
+                let signature = Signature { param_tys, return_ty };
+                Item::Function(Function { signature, param_names, body })
+            }
+        }
     }
 
     fn intern_block(&self, stmts: Vec<ExprId>) -> ExprId {

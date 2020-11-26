@@ -8,13 +8,11 @@ fn do_test_pretty(source_text: &str, pretty_text: &str) -> Result<()> {
     let mut db = Database::default();
     db.set_source(source_text.to_owned());
 
-    let function_names = db.function_names()?;
-
     let mut actual_pretty_text = String::new();
-    for name in function_names {
-        let function = db.lower_function(name)?;
-        let param_names = db.function_param_names(name)?;
-        write!(&mut actual_pretty_text, "{}", db.pretty_print_function(name, &function, &param_names))?;
+    for name in db.function_names()? {
+        let mut function = db.function(name)?;
+        function.body = db.lower_function(name)?;
+        write!(&mut actual_pretty_text, "{}", db.pretty_print_function(name, &function))?;
     }
 
     print!("{}", actual_pretty_text);
