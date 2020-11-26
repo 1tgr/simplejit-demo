@@ -1,6 +1,7 @@
 use cranelift::codegen;
 use cranelift::codegen::ir::DisplayFunctionAnnotations;
 use cranelift_module::{DataContext, Module as _};
+use simplejit_demo::ast::Item;
 use simplejit_demo::{Database, Intern, Jit, Lower, Parse, PrettyExt, Result, Source, TargetExt};
 use std::fmt::Write;
 
@@ -8,12 +9,22 @@ fn do_test_pretty(source_text: &str, pretty_text: &str) -> Result<()> {
     let mut db = Database::default();
     db.set_source(source_text.to_owned());
 
+    let items = db.module()?;
+    let mut item_names = items.keys().copied().collect::<Vec<_>>();
+    item_names.sort_by_key(|&name| db.lookup_intern_ident(name));
+
     let mut actual_pretty_text = String::new();
-    for name in db.function_names()? {
-        let mut function = db.function(name)?;
-        let (_, body) = db.lower_function(name)?;
-        function.body = body;
-        write!(&mut actual_pretty_text, "{}", db.pretty_print_function(name, &function))?;
+    for name in item_names {
+        match &items[&name] {
+            Item::Extern(_) => writeln!(actual_pretty_text, "extern fn {}", db.lookup_intern_ident(name))?,
+            Item::Function(item) => {
+                let (_, body) = db.lower_function(name)?;
+                let mut item = item.clone();
+                item.body = body;
+                write!(&mut actual_pretty_text, "{}", db.pretty_print_function(name, &item))?;
+            }
+            Item::Struct(_) => writeln!(actual_pretty_text, "struct {}", db.lookup_intern_ident(name))?,
+        }
     }
 
     print!("{}", actual_pretty_text);
@@ -125,9 +136,19 @@ jit_test!(iterative_fib, "Iterative Fib", |code| {
     assert_eq!(code(10), 55);
 });
 
+jit_test!(simple_struct, "Simple Struct", |code| {
+    let code = unsafe { std::mem::transmute::<*const u8, fn(isize) -> isize>(code) };
+    assert_eq!(code(10), 55);
+});
+
 jit_test!(string, "String", |code| {
     let code = unsafe { std::mem::transmute::<*const u8, fn() -> ()>(code) };
     code();
+});
+
+jit_test!(struct_function, "Struct Function", |code| {
+    let code = unsafe { std::mem::transmute::<*const u8, fn(isize) -> isize>(code) };
+    assert_eq!(code(10), 55);
 });
 
 jit_error_test!(wrong_variable_type, "Say Hello");

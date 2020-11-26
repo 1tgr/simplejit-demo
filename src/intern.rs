@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::{frontend, VecExt};
+use crate::{frontend, VecExt, VecMapExt};
 
 #[salsa::query_group(InternDatabase)]
 pub trait Intern {
@@ -73,6 +73,12 @@ pub trait InternExt: Intern {
                 Expr::Deref(Deref { expr })
             }
 
+            E::Dot(expr, name) => {
+                let expr = self.intern_frontend_expr(*expr);
+                let name = self.intern_ident(name);
+                Expr::Dot(Dot { expr, field_name: name })
+            }
+
             E::GlobalDataAddr(name) => {
                 let name = self.intern_ident(name);
                 Expr::GlobalDataAddr(GlobalDataAddr { name })
@@ -98,6 +104,12 @@ pub trait InternExt: Intern {
 
             E::Literal(value) => Expr::Literal(Literal { value }),
 
+            E::StructInit(name, fields) => {
+                let name = self.intern_ident(name);
+                let fields = fields.into_iter().map(|(name, expr)| (self.intern_ident(name), self.intern_frontend_expr(*expr))).collect();
+                Expr::StructInit(StructInit { name, fields })
+            }
+
             E::WhileLoop(condition, stmts) => {
                 let condition = self.intern_frontend_expr(*condition);
                 let body = self.intern_frontend_block(stmts);
@@ -113,6 +125,7 @@ pub trait InternExt: Intern {
 
         let ty = match ty {
             T::I32 => Type::Integer(Integer { signed: true, bits: 32 }),
+            T::Named(name) => Type::Named(self.intern_ident(name)),
             T::Pointer(ty) => Type::Pointer(self.intern_frontend_type(*ty)),
             T::U8 => Type::Integer(Integer { signed: false, bits: 8 }),
             T::Unit => Type::Unit,
@@ -122,7 +135,7 @@ pub trait InternExt: Intern {
     }
 
     fn intern_frontend_block(&self, stmts: Vec<frontend::Expr>) -> ExprId {
-        let stmts = stmts.into_iter().map(|expr| self.intern_frontend_expr(expr)).collect();
+        let stmts = stmts.map(|expr| self.intern_frontend_expr(expr));
         self.intern_block(stmts)
     }
 
@@ -145,6 +158,12 @@ pub trait InternExt: Intern {
                 let body = self.intern_frontend_block(stmts);
                 let signature = Signature { param_tys, return_ty };
                 Item::Function(Function { signature, param_names, body })
+            }
+
+            I::Struct(item) => {
+                let frontend::Struct { fields } = item;
+                let (field_names, field_tys) = fields.into_iter().map(|(name, ty)| (self.intern_ident(name), self.intern_frontend_type(ty))).unzip();
+                Item::Struct(Struct { field_names, field_tys })
             }
         }
     }

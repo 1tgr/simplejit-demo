@@ -9,12 +9,12 @@ fn compile<DB: Jit + ?Sized>(db: &mut DB) -> Result<i32> {
     db.clif_ctx(name)?;
 
     let signature = db.function_signature(name)?;
-    let cl_func_id = db.clif_func_id(false, name, signature).unwrap();
+    let clif_func_id = db.clif_func_id(false, name, signature).unwrap();
 
     db.with_module_mut(|module| {
         module.finalize_definitions();
 
-        let code = module.get_finalized_function(cl_func_id);
+        let code = module.get_finalized_function(clif_func_id);
         let code = unsafe { mem::transmute::<*const u8, fn() -> i32>(code) };
         Ok(code())
     })

@@ -33,15 +33,18 @@ pub struct Signature {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Env {
     pub bindings: HashMap<IdentId, (EnvId, Binding)>,
+    pub ty_bindings: HashMap<IdentId, TyBinding>,
 }
 
 mod binding;
 mod expr;
 mod item;
 mod ty;
+mod ty_binding;
 
 pub use crate::frontend::{ArithmeticKind, ComparisonKind};
 pub use binding::*;
 pub use expr::*;
 pub use item::*;
 pub use ty::*;
+pub use ty_binding::*;

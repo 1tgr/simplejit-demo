@@ -1,0 +1,32 @@
+struct Pair {
+    a: i32
+    r: i32
+}
+
+struct State {
+    n: i32
+    pair: Pair
+}
+
+fn Simple Struct(n: i32) -> i32 {
+    if n == 0 {
+        0
+    } else {
+        State = State {
+            n: n - 1
+            pair: Pair {
+                a: 0
+                r: 1
+            }        
+        }
+        while State.n != 0 {
+            t = State.pair.r
+            State.pair = Pair {
+                r: State.pair.r + State.pair.a
+                a: t
+            }
+            State.n = State.n - 1
+        }
+        State.pair.r
+   }
+}

@@ -1,0 +1,41 @@
+struct Pair {
+    a: i32
+    r: i32
+}
+
+struct State {
+    n: i32
+    pair: Pair
+}
+
+fn Struct Function(n: i32) -> i32 {
+    if n == 0 {
+        0
+    } else {
+        State = Init(n - 1)
+        while State.n != 0 {
+            State = Iter(State)
+        }
+        State.pair.r
+   }
+}
+
+fn Init(n: i32) -> State {
+    State {
+        n: n
+        pair: Pair {
+            a: 0
+            r: 1
+        }        
+    }
+}
+
+fn Iter(s: State) -> State {
+    t = s.pair.r
+    s.pair = Pair {
+        r: s.pair.r + s.pair.a
+        a: t
+    }
+    s.n = s.n - 1
+    s
+}

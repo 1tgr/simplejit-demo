@@ -1,0 +1,35 @@
+fn Init(n: i32) -> State {
+    State {
+        n: n@2
+        pair: Pair {
+            a: 0
+            r: 1
+        }
+    }
+}
+fn Iter(s: State) -> State {
+    {
+        /* let */ t@3 = s@2.pair.r
+        s@2.pair = Pair {
+            a: t@3
+            r: s@2.pair.r + s@2.pair.a
+        }
+        s@2.n = s@2.n - 1
+        s@2
+    }
+}
+struct Pair
+struct State
+fn Struct Function(n: i32) -> i32 {
+    if n@2 == 0 {
+        0
+    else {
+        {
+            /* let */ State@3 = Init@1(n@2 - 1)
+            while State@3.n != 0 {
+                State@3 = Iter@1(State@3)
+            }
+            State@3.pair.r
+        }
+    }
+}

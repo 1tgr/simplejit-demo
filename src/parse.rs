@@ -82,30 +82,41 @@ fn function_signature(db: &dyn Parse, name: IdentId) -> Result<Signature> {
 }
 
 fn global_env(db: &dyn Parse) -> Result<Env> {
-    let bindings = db
-        .module()?
-        .iter()
-        .map(|(&name, item)| {
-            let binding = match item {
-                Item::Extern(item) => {
-                    let Extern { signature } = item;
-                    Binding::Extern(signature.clone())
-                }
+    let mut bindings = im_rc::HashMap::new();
+    let mut ty_bindings = im_rc::HashMap::new();
 
-                Item::Function(item) => {
-                    let Function {
-                        signature,
-                        param_names: _,
-                        body: _,
-                    } = item;
+    for (&name, item) in db.module()?.iter() {
+        match item.clone() {
+            Item::Extern(item) => {
+                let Extern { signature } = item;
+                bindings.insert(name, (EnvId::GLOBAL, Binding::Extern(signature)));
+            }
 
-                    Binding::Function(signature.clone())
-                }
-            };
+            Item::Function(item) => {
+                let Function {
+                    signature,
+                    param_names: _,
+                    body: _,
+                } = item;
 
-            (name, (EnvId::GLOBAL, binding))
-        })
-        .collect();
+                bindings.insert(name, (EnvId::GLOBAL, Binding::Function(signature)));
+            }
 
-    Ok(Env { bindings })
+            Item::Struct(item) => {
+                ty_bindings.insert(name, TyBinding::Struct(item));
+            }
+        }
+    }
+
+    Ok(Env { bindings, ty_bindings })
 }
+
+pub trait ParseExt: Parse {
+    fn ty_binding(&self, name: IdentId) -> Result<TyBinding> {
+        let Env { bindings: _, ty_bindings } = self.global_env()?;
+        let ty_binding = ty_bindings.get(&name).ok_or_else(|| error!("using undeclared type {}", self.lookup_intern_ident(name)))?;
+        Ok(ty_binding.clone())
+    }
+}
+
+impl<T: Parse + ?Sized> ParseExt for T {}

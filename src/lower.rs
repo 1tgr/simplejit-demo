@@ -13,19 +13,22 @@ pub trait Lower: Parse {
 }
 
 fn lower_function(db: &dyn Lower, name: IdentId) -> Result<(Rc<HashMap<EnvId, Env>>, ExprId)> {
-    let mut index = 2;
     let mut envs = HashMap::new();
+    let global_env = db.global_env()?;
+    envs.insert(EnvId::GLOBAL, global_env.clone());
+
+    let mut index = 2;
     let env = EnvId::from(NonZeroU32::new(index).unwrap());
     index += 1;
 
-    let Env { mut bindings } = db.global_env()?;
+    let Env { mut bindings, ty_bindings } = global_env;
     let Function { signature, param_names, body } = db.function(name)?;
     let Signature { param_tys, return_ty: _ } = signature;
     for (index, (name, ty)) in param_names.into_iter().zip(param_tys).enumerate() {
         bindings.insert(name, (env, Binding::Param(Param { index, ty })));
     }
 
-    envs.insert(env, Env { bindings });
+    envs.insert(env, Env { bindings, ty_bindings });
 
     let body = LowerExprTransform {
         db,
@@ -39,14 +42,24 @@ fn lower_function(db: &dyn Lower, name: IdentId) -> Result<(Rc<HashMap<EnvId, En
 }
 
 pub trait LowerExt: Lower {
-    fn binding(&self, function_name: IdentId, env: EnvId, name: IdentId) -> Result<(EnvId, Binding)> {
+    fn binding_pair(&self, function_name: IdentId, env: EnvId, name: IdentId) -> Result<(EnvId, Binding)> {
         let (envs, _) = self.lower_function(function_name)?;
-        let Env { bindings } = &envs[&env];
+        let Env { bindings, ty_bindings: _ } = &envs[&env];
         let binding = bindings
             .get(&name)
             .ok_or_else(|| error!("reading from undeclared variable {}", self.lookup_intern_ident(name)))?;
 
         Ok(binding.clone())
+    }
+
+    fn binding_decl_env(&self, function_name: IdentId, env: EnvId, name: IdentId) -> Result<EnvId> {
+        let (decl_env, _) = self.binding_pair(function_name, env, name)?;
+        Ok(decl_env)
+    }
+
+    fn binding(&self, function_name: IdentId, env: EnvId, name: IdentId) -> Result<Binding> {
+        let (_, binding) = self.binding_pair(function_name, env, name)?;
+        Ok(binding)
     }
 }
 
@@ -60,19 +73,13 @@ struct LowerExprTransform<'a, DB: ?Sized> {
 }
 
 impl<'a, DB: Intern + ?Sized> LowerExprTransform<'a, DB> {
-    fn make_scope(
-        &mut self,
-        mut bindings: im_rc::HashMap<IdentId, (EnvId, Binding)>,
-        decl_name: IdentId,
-        decl_expr: ExprId,
-        mut stmts: Vec<ExprId>,
-    ) -> result::Result<Scope, Infallible> {
+    fn make_scope(&mut self, mut env: Env, decl_name: IdentId, decl_expr: ExprId, mut stmts: Vec<ExprId>) -> result::Result<Scope, Infallible> {
         let scope_env = EnvId::from(NonZeroU32::new(*self.index).unwrap());
         *self.index += 1;
 
         let decl_expr = self.transform_expr(decl_expr)?;
-        bindings.insert(decl_name, (scope_env, Binding::Variable(Variable { decl_expr })));
-        self.envs.insert(scope_env, Env { bindings });
+        env.bindings.insert(decl_name, (scope_env, Binding::Variable(Variable { decl_expr })));
+        self.envs.insert(scope_env, env);
 
         LowerExprTransform {
             db: self.db,
@@ -99,11 +106,11 @@ impl<'a, DB: Intern + ?Sized> LowerExprTransform<'a, DB> {
 
                 if let Expr::Identifier(lvalue) = self.db.lookup_intern_expr(lvalue) {
                     let Identifier { env: _, name } = lvalue;
-                    let Env { bindings } = self.envs[&self.env].clone();
+                    let env = self.envs[&self.env].clone();
 
-                    if !bindings.contains_key(&name) {
+                    if !env.bindings.contains_key(&name) {
                         let body = stmts.split_off(index + 1);
-                        let scope = self.make_scope(bindings, name, decl_expr, body)?;
+                        let scope = self.make_scope(env, name, decl_expr, body)?;
                         stmts[index] = self.intern_expr(Expr::Scope(scope));
                         return Ok(());
                     }

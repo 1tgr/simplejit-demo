@@ -149,6 +149,25 @@ impl Deref {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Dot {
+    pub expr: ExprId,
+    pub field_name: IdentId,
+}
+
+impl Dot {
+    pub fn walk<V: ExprVisitor + ?Sized>(self, visitor: &mut V) -> Result<(), V::Error> {
+        let Self { expr, field_name: _ } = self;
+        visitor.visit_expr(expr)?;
+        Ok(())
+    }
+
+    pub fn transform<T: ExprTransform + ?Sized>(mut self, transform: &mut T) -> Result<Expr, T::Error> {
+        self.expr = transform.transform_expr(self.expr)?;
+        Ok(Expr::Dot(self))
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct GlobalDataAddr {
     pub name: IdentId,
 }
@@ -270,6 +289,31 @@ impl Scope {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct StructInit {
+    pub name: IdentId,
+    pub fields: im_rc::HashMap<IdentId, ExprId>,
+}
+
+impl StructInit {
+    pub fn walk<V: ExprVisitor + ?Sized>(self, visitor: &mut V) -> Result<(), V::Error> {
+        let Self { name: _, fields } = self;
+        for &expr in fields.values() {
+            visitor.visit_expr(expr)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn transform<T: ExprTransform + ?Sized>(mut self, transform: &mut T) -> Result<Expr, T::Error> {
+        for (_, expr_mut) in self.fields.iter_mut() {
+            *expr_mut = transform.transform_expr(*expr_mut)?;
+        }
+
+        Ok(Expr::StructInit(self))
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct WhileLoop {
     pub condition: ExprId,
     pub body: ExprId,
@@ -385,11 +429,13 @@ expr_enum! {
     [ Call, visit_call, transform_call, map_call ],
     [ Comparison, visit_comparison, transform_comparison, map_comparison ],
     [ Deref, visit_deref, transform_deref, map_deref ],
+    [ Dot, visit_dot, transform_dot, map_dot ],
     [ GlobalDataAddr, visit_global_data_addr, transform_global_data_addr, map_global_data_addr ],
     [ Identifier, visit_identifier, transform_identifier, map_identifier ],
     [ IfElse, visit_if_else, transform_if_else, map_if_else ],
     [ Index, visit_index, transform_index, map_index ],
     [ Literal, visit_literal, transform_literal, map_literal ],
     [ Scope, visit_scope, transform_scope, map_scope ],
+    [ StructInit, visit_struct_init, transform_struct_init, map_struct_init ],
     [ WhileLoop, visit_while_loop, transform_while_loop, map_while_loop ]
 }

@@ -1,3 +1,4 @@
 fn Say Hello() -> i32 {
     puts@1(&hello_string)
 }
+extern fn puts

@@ -1,0 +1,28 @@
+struct Pair
+fn Simple Struct(n: i32) -> i32 {
+    if n@2 == 0 {
+        0
+    else {
+        {
+            /* let */ State@3 = State {
+                n: n@2 - 1
+                pair: Pair {
+                    a: 0
+                    r: 1
+                }
+            }
+            while State@3.n != 0 {
+                {
+                    /* let */ t@4 = State@3.pair.r
+                    State@3.pair = Pair {
+                        a: t@4
+                        r: State@3.pair.r + State@3.pair.a
+                    }
+                    State@3.n = State@3.n - 1
+                }
+            }
+            State@3.pair.r
+        }
+    }
+}
+struct State

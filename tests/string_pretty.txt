@@ -9,3 +9,6 @@ fn String() -> () {
         free@1(s@3)
     }
 }
+extern fn free
+extern fn puts
+extern fn strdup

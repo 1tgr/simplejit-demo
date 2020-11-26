@@ -1,6 +1,5 @@
 use crate::ast::*;
 use crate::frontend::{ArithmeticKind, ComparisonKind};
-use crate::intern::Intern;
 use crate::lower::LowerExt;
 use crate::Lower;
 use itertools::{Itertools, Position};
@@ -124,7 +123,7 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b, 
 
     fn visit_call(&mut self, _expr_id: ExprId, expr: Call) -> fmt::Result {
         let Call { env, name, args } = expr;
-        let (decl_env, _) = self.p.db.binding(self.p.function_name, env.unwrap(), name).unwrap();
+        let decl_env = self.p.db.binding_decl_env(self.p.function_name, env.unwrap(), name).unwrap();
         write!(
             self.f,
             "{}@{}({})",
@@ -154,6 +153,11 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b, 
         write!(self.f, "*{}", self.p.with_expr(expr))
     }
 
+    fn visit_dot(&mut self, _expr_id: ExprId, expr: Dot) -> fmt::Result {
+        let Dot { expr, field_name: name } = expr;
+        write!(self.f, "{}.{}", self.p.with_expr(expr), self.p.db.lookup_intern_ident(name))
+    }
+
     fn visit_global_data_addr(&mut self, _expr_id: ExprId, expr: GlobalDataAddr) -> fmt::Result {
         let GlobalDataAddr { name } = expr;
         write!(self.f, "&{}", self.p.db.lookup_intern_ident(name))
@@ -163,7 +167,7 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b, 
         let Identifier { env, name } = expr;
         write!(self.f, "{}@", self.p.db.lookup_intern_ident(name))?;
         if let Some(env) = env {
-            if let Ok((decl_env, _)) = self.p.db.binding(self.p.function_name, env, name) {
+            if let Ok(decl_env) = self.p.db.binding_decl_env(self.p.function_name, env, name) {
                 write!(self.f, "{}", decl_env)
             } else {
                 write!(self.f, "???")
@@ -211,6 +215,21 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b, 
             p.with_expr(decl_expr)
         )?;
         writeln!(self.f, "{}{}", p.indent, p.with_expr(body))?;
+        write!(self.f, "{}}}", self.p.indent)
+    }
+
+    fn visit_struct_init(&mut self, _expr_id: ExprId, expr: StructInit) -> fmt::Result {
+        let StructInit { name, fields } = expr;
+        let p = self.p.enter();
+        writeln!(self.f, "{} {{", self.p.db.lookup_intern_ident(name))?;
+
+        let mut fields = fields.into_iter().map(|(name, expr)| (self.p.db.lookup_intern_ident(name), expr)).collect::<Vec<_>>();
+        fields.sort_by_key(|(name, _)| name.clone());
+
+        for (name, expr) in fields {
+            writeln!(self.f, "{}{}: {}", p.indent, name, p.with_expr(expr))?;
+        }
+
         write!(self.f, "{}}}", self.p.indent)
     }
 
@@ -277,7 +296,7 @@ impl<'a, DB: ?Sized> PrettyPrintType<'a, DB> {
     }
 }
 
-impl<'a, DB: Intern + ?Sized> fmt::Display for PrettyPrintType<'a, DB> {
+impl<'a, DB: Lower + ?Sized> fmt::Display for PrettyPrintType<'a, DB> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.db.lookup_intern_type(self.ty) {
             Type::Bool => f.write_str("bool"),
@@ -285,6 +304,7 @@ impl<'a, DB: Intern + ?Sized> fmt::Display for PrettyPrintType<'a, DB> {
                 let Integer { signed, bits } = ty;
                 write!(f, "{}{}", if signed { "i" } else { "u" }, bits)
             }
+            Type::Named(ty) => write!(f, "{}", self.db.lookup_intern_ident(ty)),
             Type::Number => f.write_str("<<number>>"),
             Type::Pointer(ty) => write!(f, "ptr<{}>", self.with_type(ty)),
             Type::Var(n) => write!(f, "'{}", char::from(b'a' + n as u8)),

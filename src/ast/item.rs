@@ -1,4 +1,5 @@
 use crate::ast::expr::ExprId;
+use crate::ast::ty::TypeId;
 use crate::ast::{IdentId, Signature};
 use derive_more::TryInto;
 
@@ -14,9 +15,16 @@ pub struct Function {
     pub body: ExprId,
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Struct {
+    pub field_names: Vec<IdentId>,
+    pub field_tys: Vec<TypeId>,
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq, TryInto)]
 #[try_into(owned, ref, ref_mut)]
 pub enum Item {
     Extern(Extern),
     Function(Function),
+    Struct(Struct),
 }

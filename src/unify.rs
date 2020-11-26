@@ -1,8 +1,9 @@
 use crate::ast::*;
 use crate::intern::Intern;
-use crate::lower::LowerExt;
+use crate::lower::{Lower, LowerExt};
+use crate::parse::ParseExt;
 use crate::pretty::PrettyExt;
-use crate::{Lower, Result};
+use crate::Result;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -61,17 +62,25 @@ impl<'a, DB: Lower + ?Sized> UnifyExprContext<'a, DB> {
         match (a_ty, b_ty) {
             (Type::Var(a), _) => {
                 self.ty_bindings.insert(a, b);
-                Ok(b)
+                return Ok(b);
             }
             (_, Type::Var(b)) => {
                 self.ty_bindings.insert(b, a);
-                Ok(a)
+                return Ok(a);
             }
-            (Type::Pointer(a), Type::Pointer(b)) => Ok(self.db.intern_type(Type::Pointer(self.unify_type(a, b)?))),
-            (Type::Integer(_), Type::Number) => Ok(a),
-            (Type::Number, Type::Integer(_)) => Ok(b),
-            _ => Err(error!("can't unify {} with {}", self.db.pretty_print_type(a), self.db.pretty_print_type(b))),
+            (Type::Pointer(a), Type::Pointer(b)) => {
+                return Ok(self.db.intern_type(Type::Pointer(self.unify_type(a, b)?)));
+            }
+            (Type::Integer(_), Type::Number) => {
+                return Ok(a);
+            }
+            (Type::Number, Type::Integer(_)) => {
+                return Ok(b);
+            }
+            _ => (),
         }
+
+        Err(error!("can't unify {} with {}", self.db.pretty_print_type(a), self.db.pretty_print_type(b)))
     }
 
     fn new_var(&mut self) -> TypeId {
@@ -116,7 +125,7 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
 
     fn map_assign(&mut self, _expr_id: ExprId, expr: Assign) -> Result<TypeId> {
         let Assign { lvalue, expr } = expr;
-        ensure!(matches!(self.context.db.lookup_intern_expr(lvalue), Expr::Deref(_) | Expr::Identifier(_) | Expr::Index(_)));
+        ensure!(matches!(self.context.db.lookup_intern_expr(lvalue), Expr::Deref(_) | Expr::Dot(_) | Expr::Identifier(_) | Expr::Index(_)));
         self.context.unify_expr(lvalue, self.ty)?;
         self.context.unify_expr(expr, self.ty)?;
         Ok(self.ty)
@@ -141,7 +150,7 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
 
     fn map_call(&mut self, _expr_id: ExprId, expr: Call) -> Result<TypeId> {
         let Call { env, name, args } = expr;
-        let (_, binding) = self.context.db.binding(self.context.function_name, env.unwrap(), name)?;
+        let binding = self.context.db.binding(self.context.function_name, env.unwrap(), name)?;
         let Signature { param_tys, return_ty } = binding.try_into().map_err(|_| error!("only functions can be called"))?;
         ensure_eq!(args.len(), param_tys.len());
         for (expr, ty) in args.into_iter().zip(param_tys) {
@@ -165,6 +174,24 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
         Ok(self.ty)
     }
 
+    fn map_dot(&mut self, _expr_id: ExprId, expr: Dot) -> Self::Value {
+        let Dot { expr, field_name } = expr;
+        let struct_ty = self.context.new_var();
+        self.context.unify_expr(expr, struct_ty)?;
+
+        let struct_ty = refine(self.context.db, &self.context.ty_bindings, struct_ty);
+        let struct_name = struct_ty.as_named().ok_or_else(|| error!("only structs can be used with ., not {:?}", struct_ty))?;
+        let ty_binding = self.context.db.ty_binding(struct_name)?;
+        let Struct { field_names, field_tys } = ty_binding.try_into().map_err(|e| error!("only structs can be used with ., not {}", e))?;
+
+        let index = field_names
+            .into_iter()
+            .position(|n| n == field_name)
+            .ok_or_else(|| error!("invalid struct field {}", self.context.db.lookup_intern_ident(field_name)))?;
+
+        self.unify_type(field_tys[index])
+    }
+
     fn map_global_data_addr(&mut self, _expr_id: ExprId, _expr: GlobalDataAddr) -> Result<TypeId> {
         let pointee = self.context.new_var();
         self.unify_type(self.context.db.pointer_type(pointee))
@@ -172,8 +199,7 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
 
     fn map_identifier(&mut self, _expr_id: ExprId, expr: Identifier) -> Result<TypeId> {
         let Identifier { env, name } = expr;
-        let (_, binding) = self.context.db.binding(self.context.function_name, env.unwrap(), name)?;
-        match binding {
+        match self.context.db.binding(self.context.function_name, env.unwrap(), name)? {
             Binding::Param(binding) => {
                 let Param { index: _, ty: param_ty } = binding;
                 self.unify_type(param_ty)
@@ -215,6 +241,25 @@ impl<'a, 'b, DB: Lower + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
         } = expr;
         self.context.unify_expr(body, self.ty)?;
         Ok(self.ty)
+    }
+
+    fn map_struct_init(&mut self, _expr_id: ExprId, expr: StructInit) -> Self::Value {
+        let StructInit { name, mut fields } = expr;
+        let ty_binding = self.context.db.ty_binding(name)?;
+        let Struct { field_names, field_tys } = ty_binding.try_into().map_err(|e| error!("only structs can be initialized, not {}", e))?;
+        for (field_name, field_ty) in field_names.into_iter().zip(field_tys) {
+            let field_expr = fields.remove(&field_name).ok_or_else(|| {
+                error!(
+                    "missing initialization for struct field {}.{}",
+                    self.context.db.lookup_intern_ident(name),
+                    self.context.db.lookup_intern_ident(field_name)
+                )
+            })?;
+
+            self.context.unify_expr(field_expr, field_ty)?;
+        }
+
+        self.unify_type(self.context.db.intern_type(Type::Named(name)))
     }
 
     fn map_while_loop(&mut self, _expr_id: ExprId, expr: WhileLoop) -> Result<TypeId> {

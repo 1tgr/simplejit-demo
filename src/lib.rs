@@ -58,6 +58,7 @@ mod unify;
 mod tests;
 
 use derive_more::Display;
+use itertools::ProcessResults;
 use std::error;
 use std::fmt;
 use std::rc::Rc;
@@ -107,6 +108,14 @@ trait VecExt<T> {
     fn as_single_item(&mut self) -> Option<T>;
 }
 
+trait VecMapExt<T, U>: Sized {
+    type Output;
+
+    fn map<F: FnMut(T) -> U>(self, f: F) -> Self::Output;
+    fn filter_map<F: FnMut(T) -> Option<U>>(self, f: F) -> Self::Output;
+    fn flat_map<I: IntoIterator<Item = U>, F: FnMut(T) -> I>(self, f: F) -> Self::Output;
+}
+
 impl<T> VecExt<T> for Vec<T> {
     fn into_single_item(mut self) -> result::Result<T, Self> {
         if let Some(item) = self.pop() {
@@ -132,6 +141,49 @@ impl<T> VecExt<T> for Vec<T> {
         None
     }
 }
+
+impl<T, U> VecMapExt<T, U> for Vec<T> {
+    type Output = Vec<U>;
+
+    fn map<F: FnMut(T) -> U>(self, f: F) -> Vec<U> {
+        self.into_iter().map(f).collect()
+    }
+
+    fn filter_map<F: FnMut(T) -> Option<U>>(self, f: F) -> Vec<U> {
+        self.into_iter().filter_map(f).collect()
+    }
+
+    fn flat_map<I: IntoIterator<Item = U>, F: FnMut(T) -> I>(self, f: F) -> Vec<U> {
+        self.into_iter().flat_map(f).collect()
+    }
+}
+
+impl<'a, T, U> VecMapExt<&'a T, U> for &'a [T] {
+    type Output = Vec<U>;
+
+    fn map<F: FnMut(&'a T) -> U>(self, f: F) -> Vec<U> {
+        self.iter().map(f).collect()
+    }
+
+    fn filter_map<F: FnMut(&'a T) -> Option<U>>(self, f: F) -> Vec<U> {
+        self.iter().filter_map(f).collect()
+    }
+
+    fn flat_map<I: IntoIterator<Item = U>, F: FnMut(&'a T) -> I>(self, f: F) -> Vec<U> {
+        self.iter().flat_map(f).collect()
+    }
+}
+
+trait ProcessResultsExt<T, E>: IntoIterator<Item = result::Result<T, E>> + Sized {
+    fn process_results<F, R>(self, processor: F) -> result::Result<R, E>
+    where
+        F: FnOnce(ProcessResults<Self::IntoIter, E>) -> R,
+    {
+        itertools::process_results(self, processor)
+    }
+}
+
+impl<I, T, E> ProcessResultsExt<T, E> for I where I: IntoIterator<Item = result::Result<T, E>> {}
 
 pub use database::Database;
 pub use intern::{Intern, InternExt};

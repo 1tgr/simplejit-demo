@@ -1,3 +1,4 @@
+use crate::ast::IdentId;
 use derive_more::Display;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Display)]
@@ -24,8 +25,19 @@ pub struct Integer {
 pub enum Type {
     Bool,
     Integer(Integer),
+    Named(IdentId),
     Number,
     Pointer(TypeId),
     Unit,
     Var(i32),
+}
+
+impl Type {
+    pub fn as_named(&self) -> Option<IdentId> {
+        if let &Self::Named(ty) = self {
+            Some(ty)
+        } else {
+            None
+        }
+    }
 }
