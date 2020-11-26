@@ -12,8 +12,13 @@ pub trait PrettyExt {
         }
     }
 
-    fn pretty_print_function<'a>(&'a self, name: IdentId, func: &'a Function) -> PrettyPrintFunction<'a, Self> {
-        PrettyPrintFunction { db: self, name, func }
+    fn pretty_print_function<'a>(&'a self, name: IdentId, function: &'a Function, param_names: &'a [IdentId]) -> PrettyPrintFunction<'a, Self> {
+        PrettyPrintFunction {
+            db: self,
+            name,
+            function,
+            param_names,
+        }
     }
 
     fn pretty_print_type(&self, ty: TypeId) -> PrettyPrintType<'_, Self> {
@@ -231,21 +236,17 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprVisitor for PrettyPrintExprVisitor<'a, 'b,
 pub struct PrettyPrintFunction<'a, DB: ?Sized> {
     db: &'a DB,
     name: IdentId,
-    func: &'a Function,
+    function: &'a Function,
+    param_names: &'a [IdentId],
 }
 
 impl<'a, DB: Intern + ?Sized> fmt::Display for PrettyPrintFunction<'a, DB> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let &Function {
-            ref signature,
-            ref param_names,
-            body,
-        } = self.func;
-
+        let &Function { ref signature, body } = self.function;
         let &Signature { ref param_tys, return_ty } = signature;
         let name = self.db.lookup_intern_ident(self.name);
 
-        let params = param_names.iter().zip(param_tys.iter()).format_with(", ", |(&name, &ty), f| {
+        let params = self.param_names.iter().zip(param_tys.iter()).format_with(", ", |(&name, &ty), f| {
             let name = self.db.lookup_intern_ident(name);
             let ty = self.db.pretty_print_type(ty);
             f(&format_args!("{}: {}", name, ty))

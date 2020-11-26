@@ -22,21 +22,22 @@ impl<'a, DB: Intern + ?Sized> UnifyExprContext<'a, DB> {
         }
     }
 
-    pub fn to_expr_type_map(&self) -> im_rc::HashMap<ExprId, TypeId> {
-        let mut refined = im_rc::HashMap::new();
-        for (&expr, &ty) in self.result.iter() {
-            let ty = self.refine(ty);
+    pub fn into_expr_type_map(self) -> HashMap<ExprId, TypeId> {
+        let Self { db, mut result, ty_bindings, .. } = self;
+
+        for (&expr, ty_mut) in result.iter_mut() {
+            let ty = refine(db, &ty_bindings, *ty_mut);
 
             let ty = match ty {
                 Type::Number => Type::Integer(Integer { signed: true, bits: 32 }),
-                Type::Var(_) => panic!("didn't expect type variable to survive unification: {}", self.db.pretty_print_expr(expr)),
+                Type::Var(_) => panic!("didn't expect type variable to survive unification: {}", db.pretty_print_expr(expr)),
                 _ => ty,
             };
 
-            refined.insert(expr, self.db.intern_type(ty));
+            *ty_mut = db.intern_type(ty);
         }
 
-        refined
+        result
     }
 
     pub fn unify_expr(&mut self, expr: ExprId, ty: TypeId) -> Result<()> {
@@ -46,8 +47,8 @@ impl<'a, DB: Intern + ?Sized> UnifyExprContext<'a, DB> {
     }
 
     fn unify_type(&mut self, a: TypeId, b: TypeId) -> Result<TypeId> {
-        let a_ty = self.refine(a);
-        let b_ty = self.refine(b);
+        let a_ty = refine(self.db, &self.ty_bindings, a);
+        let b_ty = refine(self.db, &self.ty_bindings, b);
         let a = self.db.intern_type(a_ty.clone());
         let b = self.db.intern_type(b_ty.clone());
         if a == b {
@@ -75,12 +76,12 @@ impl<'a, DB: Intern + ?Sized> UnifyExprContext<'a, DB> {
         self.index += 1;
         ty
     }
+}
 
-    fn refine(&self, ty: TypeId) -> Type {
-        match self.db.lookup_intern_type(ty) {
-            Type::Var(ty) => self.ty_bindings.get(&ty).map_or(Type::Var(ty), |&ty| self.refine(ty)),
-            ty => ty,
-        }
+fn refine<DB: Intern + ?Sized>(db: &DB, ty_bindings: &HashMap<i32, TypeId>, ty: TypeId) -> Type {
+    match db.lookup_intern_type(ty) {
+        Type::Var(ty) => ty_bindings.get(&ty).map_or(Type::Var(ty), |&ty| refine(db, ty_bindings, ty)),
+        ty => ty,
     }
 }
 
@@ -104,9 +105,10 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
 
     fn map_arithmetic(&mut self, _expr_id: ExprId, expr: Arithmetic) -> Result<TypeId> {
         let Arithmetic { lhs, op: _, rhs } = expr;
-        self.context.unify_expr(lhs, self.context.db.number_type())?;
-        self.context.unify_expr(rhs, self.context.db.number_type())?;
-        self.unify_type(self.context.db.number_type())
+        let ty = self.context.db.number_type();
+        self.context.unify_expr(lhs, ty)?;
+        self.context.unify_expr(rhs, ty)?;
+        self.unify_type(ty)
     }
 
     fn map_assign(&mut self, _expr_id: ExprId, expr: Assign) -> Result<TypeId> {
@@ -153,8 +155,9 @@ impl<'a, 'b, DB: Intern + ?Sized> ExprMap for UnifyExprVisitor<'a, 'b, DB> {
 
     fn map_comparison(&mut self, _expr_id: ExprId, expr: Comparison) -> Result<TypeId> {
         let Comparison { lhs, op: _, rhs } = expr;
-        self.context.unify_expr(lhs, self.context.db.number_type())?;
-        self.context.unify_expr(rhs, self.context.db.number_type())?;
+        let ty = self.context.db.number_type();
+        self.context.unify_expr(lhs, ty)?;
+        self.context.unify_expr(rhs, ty)?;
         self.unify_type(self.context.db.bool_type())
     }
 

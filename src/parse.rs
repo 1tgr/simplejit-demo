@@ -7,14 +7,15 @@ use std::collections::HashMap;
 
 #[salsa::query_group(ParseDatabase)]
 pub trait Parse: Source + Intern {
-    fn module(&self) -> Result<HashMap<IdentId, Function>>;
+    fn module(&self) -> Result<HashMap<IdentId, (Function, Vec<IdentId>)>>;
     fn function_names(&self) -> Result<Vec<IdentId>>;
-    fn function(&self, name: IdentId) -> Result<Function>;
+    fn function(&self, name: IdentId) -> Result<(Function, Vec<IdentId>)>;
     fn function_signature(&self, name: IdentId) -> Result<Signature>;
+    fn function_param_names(&self, name: IdentId) -> Result<Vec<IdentId>>;
     fn global_env(&self) -> Result<EnvId>;
 }
 
-fn module(db: &dyn Parse) -> Result<HashMap<IdentId, Function>> {
+fn module(db: &dyn Parse) -> Result<HashMap<IdentId, (Function, Vec<IdentId>)>> {
     let input = db.source();
     let functions = parser::module(&input)?;
 
@@ -37,14 +38,19 @@ fn function_names(db: &dyn Parse) -> Result<Vec<IdentId>> {
     Ok(names)
 }
 
-fn function(db: &dyn Parse, name: IdentId) -> Result<Function> {
+fn function(db: &dyn Parse, name: IdentId) -> Result<(Function, Vec<IdentId>)> {
     let mut module = db.module()?;
     module.remove(&name).ok_or_else(|| error!("undefined function {}", db.lookup_intern_ident(name)))
 }
 
 fn function_signature(db: &dyn Parse, name: IdentId) -> Result<Signature> {
-    let function = db.function(name)?;
+    let (function, _) = db.function(name)?;
     Ok(function.signature)
+}
+
+fn function_param_names(db: &dyn Parse, name: IdentId) -> Result<Vec<IdentId>> {
+    let (_, param_names) = db.function(name)?;
+    Ok(param_names)
 }
 
 fn global_env(db: &dyn Parse) -> Result<EnvId> {

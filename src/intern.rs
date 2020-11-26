@@ -135,13 +135,13 @@ pub trait InternExt: Intern {
         self.intern_block(stmts)
     }
 
-    fn intern_frontend_function(&self, func: frontend::Function) -> Function {
+    fn intern_frontend_function(&self, func: frontend::Function) -> (Function, Vec<IdentId>) {
         let frontend::Function { params, return_ty, stmts } = func;
         let (param_names, param_tys) = params.into_iter().map(|(name, ty)| (self.intern_ident(name), self.intern_frontend_type(ty))).unzip();
         let return_ty = self.intern_frontend_type(return_ty);
         let body = self.intern_frontend_block(stmts);
         let signature = Signature { param_tys, return_ty };
-        Function { signature, param_names, body }
+        (Function { signature, body }, param_names)
     }
 
     fn intern_block(&self, stmts: Vec<ExprId>) -> ExprId {

@@ -354,7 +354,6 @@ impl WhileLoop {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Function {
     pub signature: Signature,
-    pub param_names: Vec<IdentId>,
     pub body: ExprId,
 }
 

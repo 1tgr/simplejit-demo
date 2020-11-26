@@ -2,15 +2,17 @@ use crate::ast::*;
 use crate::lower::Lower;
 use crate::unify::UnifyExprContext;
 use crate::Result;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 #[salsa::query_group(TypeCkDatabase)]
 pub trait TypeCk: Lower {
-    fn unify_function(&self, name: IdentId) -> Result<im_rc::HashMap<ExprId, TypeId>>;
+    fn unify_function(&self, name: IdentId) -> Result<Rc<HashMap<ExprId, TypeId>>>;
 }
 
-fn unify_function(db: &dyn TypeCk, name: IdentId) -> Result<im_rc::HashMap<ExprId, TypeId>> {
-    let Function { signature, param_names: _, body } = db.lower_function(name)?;
+fn unify_function(db: &dyn TypeCk, name: IdentId) -> Result<Rc<HashMap<ExprId, TypeId>>> {
+    let Function { signature, body } = db.lower_function(name)?;
     let mut context = UnifyExprContext::new(db);
     context.unify_expr(body, signature.return_ty)?;
-    Ok(context.to_expr_type_map())
+    Ok(Rc::new(context.into_expr_type_map()))
 }

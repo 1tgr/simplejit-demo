@@ -98,7 +98,7 @@ fn cl_data_id(db: &dyn JIT, name: IdentId) -> Result<ClDataId> {
 }
 
 fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
-    let Function { signature, param_names: _, body } = db.lower_function(name)?;
+    let Function { signature, body } = db.lower_function(name)?;
     let mut ctx = ClContext::new();
     ctx.func.signature = db.cl_signature(signature.clone());
 
@@ -117,7 +117,7 @@ fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
     };
 
     let expr_types = db.unify_function(name)?;
-    let return_value = FunctionTranslator::new(db, &mut builder, param_values, expr_types).map_expr(body)?;
+    let return_value = FunctionTranslator::new(db, &mut builder, param_values, &expr_types).map_expr(body)?;
     builder.ins().return_(return_value.as_ref().map_or(&[], slice::from_ref));
     builder.finalize();
 
@@ -141,14 +141,14 @@ struct FunctionTranslator<'a, 'b> {
     db: &'a dyn JIT,
     builder: &'a mut FunctionBuilder<'b>,
     param_values: Vec<Value>,
-    expr_types: im_rc::HashMap<ExprId, TypeId>,
+    expr_types: &'a HashMap<ExprId, TypeId>,
     cl_variables: HashMap<(EnvId, IdentId), Option<ClVariable>>,
     cl_functions: HashMap<(EnvId, IdentId), ClFuncRef>,
     cl_data: HashMap<ClDataId, ClGlobalValue>,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
-    fn new(db: &'a dyn JIT, builder: &'a mut FunctionBuilder<'b>, param_values: Vec<Value>, expr_types: im_rc::HashMap<ExprId, TypeId>) -> Self {
+    fn new(db: &'a dyn JIT, builder: &'a mut FunctionBuilder<'b>, param_values: Vec<Value>, expr_types: &'a HashMap<ExprId, TypeId>) -> Self {
         Self {
             db,
             builder,
