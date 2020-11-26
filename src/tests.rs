@@ -1,15 +1,15 @@
-use crate::{Database, Intern, Result, Source, TargetExt, TypeCk, JIT};
+use crate::{Database, Intern, Jit, Result, Source, TargetExt, TypeCk};
 use std::mem;
 
-fn compile<DB: JIT + ?Sized>(db: &mut DB) -> Result<i32> {
+fn compile<DB: Jit + ?Sized>(db: &mut DB) -> Result<i32> {
     let name = db.intern_ident("Main".to_owned());
     assert_eq!(db.function_names().unwrap(), vec![name]);
 
     db.reset_module();
-    db.cl_ctx(name)?;
+    db.clif_ctx(name)?;
 
     let signature = db.function_signature(name)?;
-    let cl_func_id = db.cl_func_id(false, name, signature).unwrap();
+    let cl_func_id = db.clif_func_id(false, name, signature).unwrap();
 
     db.with_module_mut(|module| {
         module.finalize_definitions();
@@ -20,7 +20,7 @@ fn compile<DB: JIT + ?Sized>(db: &mut DB) -> Result<i32> {
     })
 }
 
-fn compile_error<DB: JIT + ?Sized>(db: &mut DB, text: &str) {
+fn compile_error<DB: Jit + ?Sized>(db: &mut DB, text: &str) {
     assert_eq!(compile(db).expect_err("expected compilation error").to_string(), text);
 }
 

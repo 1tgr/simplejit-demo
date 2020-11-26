@@ -1,15 +1,15 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use simplejit_demo::ast::IdentId;
-use simplejit_demo::{Database, Intern, Result, Source, TargetExt, TypeCk, JIT};
+use simplejit_demo::{Database, Intern, Jit, Result, Source, TargetExt, TypeCk};
 use std::fmt::Write;
 use std::mem;
 
-fn compile<DB: JIT + ?Sized>(db: &mut DB, name: IdentId) -> Result<i32> {
+fn compile<DB: Jit + ?Sized>(db: &mut DB, name: IdentId) -> Result<i32> {
     db.reset_module();
-    db.cl_ctx(name)?;
+    db.clif_ctx(name)?;
 
     let signature = db.function_signature(name)?;
-    let cl_func_id = db.cl_func_id(false, name, signature).unwrap();
+    let cl_func_id = db.clif_func_id(false, name, signature).unwrap();
 
     db.with_module_mut(|module| {
         module.finalize_definitions();

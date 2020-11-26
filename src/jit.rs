@@ -8,20 +8,20 @@ use crate::{Error, Result, VecExt};
 use cranelift::codegen::binemit::NullTrapSink;
 use cranelift::codegen::entity::EntityRef;
 use cranelift::codegen::ir::condcodes::IntCC;
-use cranelift::codegen::ir::types::{self, Type as ClType};
-use cranelift::codegen::ir::{AbiParam, FuncRef as ClFuncRef, GlobalValue as ClGlobalValue, InstBuilder, MemFlags, Signature as ClSignature, Value};
+use cranelift::codegen::ir::types::{self, Type as ClifType};
+use cranelift::codegen::ir::{AbiParam, FuncRef as ClifFuncRef, GlobalValue as ClifGlobalValue, InstBuilder, MemFlags, Signature as ClifSignature, Value};
 use cranelift::codegen::isa::CallConv;
 use cranelift::codegen::verifier::VerifierErrors;
-use cranelift::codegen::{CodegenError, Context as ClContext};
-use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext, Variable as ClVariable};
-use cranelift_module::{DataId as ClDataId, FuncId as ClFuncId, Linkage, Module as _, ModuleError};
+use cranelift::codegen::{CodegenError, Context as ClifContext};
+use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext, Variable as ClifVariable};
+use cranelift_module::{DataId as ClifDataId, FuncId as ClifFuncId, Linkage, Module as _, ModuleError};
 use std::collections::HashMap;
 use std::ops;
 use std::rc::Rc;
 use std::slice;
 
 #[derive(Clone)]
-pub struct Context(Rc<ClContext>);
+pub struct Context(Rc<ClifContext>);
 
 impl PartialEq for Context {
     #[allow(clippy::vtable_address_comparisons)]
@@ -33,7 +33,7 @@ impl PartialEq for Context {
 impl Eq for Context {}
 
 impl ops::Deref for Context {
-    type Target = ClContext;
+    type Target = ClifContext;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -41,67 +41,67 @@ impl ops::Deref for Context {
 }
 
 #[salsa::query_group(JITDatabase)]
-pub trait JIT: Parse + Lower + Target + TypeCk {
-    fn cl_pointer_type(&self) -> ClType;
-    fn cl_default_call_conv(&self) -> CallConv;
-    fn cl_type(&self, ty: TypeId) -> Option<ClType>;
-    fn cl_signature(&self, signature: Signature) -> ClSignature;
-    fn cl_func_id(&self, external: bool, name: IdentId, signature: Signature) -> Result<ClFuncId>;
-    fn cl_data_id(&self, name: IdentId) -> Result<ClDataId>;
-    fn cl_ctx(&self, name: IdentId) -> Result<Context>;
+pub trait Jit: Parse + Lower + Target + TypeCk {
+    fn clif_pointer_type(&self) -> ClifType;
+    fn clif_default_call_conv(&self) -> CallConv;
+    fn clif_type(&self, ty: TypeId) -> Option<ClifType>;
+    fn clif_signature(&self, signature: Signature) -> ClifSignature;
+    fn clif_func_id(&self, external: bool, name: IdentId, signature: Signature) -> Result<ClifFuncId>;
+    fn clif_data_id(&self, name: IdentId) -> Result<ClifDataId>;
+    fn clif_ctx(&self, name: IdentId) -> Result<Context>;
 }
 
-fn cl_pointer_type(db: &dyn JIT) -> ClType {
+fn clif_pointer_type(db: &dyn Jit) -> ClifType {
     db.with_module(|module| module.target_config().pointer_type())
 }
 
-fn cl_default_call_conv(db: &dyn JIT) -> CallConv {
+fn clif_default_call_conv(db: &dyn Jit) -> CallConv {
     db.with_module(|module| module.isa().default_call_conv())
 }
 
-fn cl_type(db: &dyn JIT, ty: TypeId) -> Option<ClType> {
+fn clif_type(db: &dyn Jit, ty: TypeId) -> Option<ClifType> {
     match db.lookup_intern_type(ty) {
         Type::Bool => Some(types::B1),
         Type::Integer(ty) => {
             let Integer { signed: _signed, bits } = ty;
-            Some(ClType::int(bits).unwrap())
+            Some(ClifType::int(bits).unwrap())
         }
         Type::Number => panic!("didn't expect number type to survive unification"),
-        Type::Pointer(_) => Some(db.cl_pointer_type()),
+        Type::Pointer(_) => Some(db.clif_pointer_type()),
         Type::Var(_) => panic!("didn't expect type variable to survive unification"),
         Type::Unit => None,
     }
 }
 
-fn cl_signature(db: &dyn JIT, signature: Signature) -> ClSignature {
+fn clif_signature(db: &dyn Jit, signature: Signature) -> ClifSignature {
     let Signature { param_tys, return_ty } = signature;
-    let mut sig = ClSignature::new(db.cl_default_call_conv());
-    sig.params = param_tys.into_iter().map(|ty| AbiParam::new(db.cl_type(ty).unwrap())).collect();
+    let mut sig = ClifSignature::new(db.clif_default_call_conv());
+    sig.params = param_tys.into_iter().map(|ty| AbiParam::new(db.clif_type(ty).unwrap())).collect();
 
-    if let Some(return_ty) = db.cl_type(return_ty) {
+    if let Some(return_ty) = db.clif_type(return_ty) {
         sig.returns.push(AbiParam::new(return_ty));
     }
 
     sig
 }
 
-fn cl_func_id(db: &dyn JIT, external: bool, name: IdentId, signature: Signature) -> Result<ClFuncId> {
+fn clif_func_id(db: &dyn Jit, external: bool, name: IdentId, signature: Signature) -> Result<ClifFuncId> {
     let name = db.lookup_intern_ident(name);
-    let signature = db.cl_signature(signature);
+    let signature = db.clif_signature(signature);
     let linkage = if external { Linkage::Import } else { Linkage::Export };
     db.with_module_mut(|module| Ok(module.declare_function(&name, linkage, &signature)?))
 }
 
-fn cl_data_id(db: &dyn JIT, name: IdentId) -> Result<ClDataId> {
+fn clif_data_id(db: &dyn Jit, name: IdentId) -> Result<ClifDataId> {
     let name = db.lookup_intern_ident(name);
     db.with_module_mut(|module| Ok(module.declare_data(&name, Linkage::Export, true, false)?))
 }
 
-fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
+fn clif_ctx(db: &dyn Jit, name: IdentId) -> Result<Context> {
     let signature = db.function_signature(name)?;
     let body = db.lower_function(name)?;
-    let mut ctx = ClContext::new();
-    ctx.func.signature = db.cl_signature(signature.clone());
+    let mut ctx = ClifContext::new();
+    ctx.func.signature = db.clif_signature(signature.clone());
 
     let func_ctx_pool = db.func_ctx_pool();
     let mut func_ctx = func_ctx_pool.pull(FunctionBuilderContext::new);
@@ -122,7 +122,7 @@ fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
     builder.ins().return_(return_value.as_ref().map_or(&[], slice::from_ref));
     builder.finalize();
 
-    let func = db.cl_func_id(false, name, signature)?;
+    let func = db.clif_func_id(false, name, signature)?;
     db.with_module_mut(|module| {
         module.define_function(func, &mut ctx, &mut NullTrapSink {}).map_err(|mut e| {
             if let ModuleError::Compilation(CodegenError::Verifier(VerifierErrors(v))) = &mut e {
@@ -139,33 +139,33 @@ fn cl_ctx(db: &dyn JIT, name: IdentId) -> Result<Context> {
 }
 
 struct FunctionTranslator<'a, 'b> {
-    db: &'a dyn JIT,
+    db: &'a dyn Jit,
     builder: &'a mut FunctionBuilder<'b>,
     param_values: Vec<Value>,
     expr_types: &'a HashMap<ExprId, TypeId>,
-    cl_variables: HashMap<(EnvId, IdentId), Option<ClVariable>>,
-    cl_functions: HashMap<(EnvId, IdentId), ClFuncRef>,
-    cl_data: HashMap<ClDataId, ClGlobalValue>,
+    clif_variables: HashMap<(EnvId, IdentId), Option<ClifVariable>>,
+    clif_functions: HashMap<(EnvId, IdentId), ClifFuncRef>,
+    clif_data: HashMap<ClifDataId, ClifGlobalValue>,
 }
 
 impl<'a, 'b> FunctionTranslator<'a, 'b> {
-    fn new(db: &'a dyn JIT, builder: &'a mut FunctionBuilder<'b>, param_values: Vec<Value>, expr_types: &'a HashMap<ExprId, TypeId>) -> Self {
+    fn new(db: &'a dyn Jit, builder: &'a mut FunctionBuilder<'b>, param_values: Vec<Value>, expr_types: &'a HashMap<ExprId, TypeId>) -> Self {
         Self {
             db,
             builder,
             param_values,
             expr_types,
-            cl_variables: HashMap::new(),
-            cl_functions: HashMap::new(),
-            cl_data: HashMap::new(),
+            clif_variables: HashMap::new(),
+            clif_functions: HashMap::new(),
+            clif_data: HashMap::new(),
         }
     }
 
-    fn translate_variable(&mut self, env: EnvId, name: IdentId) -> Option<ClVariable> {
+    fn translate_variable(&mut self, env: EnvId, name: IdentId) -> Option<ClifVariable> {
         let Env { bindings } = self.db.lookup_intern_env(env);
         let &(decl_env, ref binding) = &bindings[&name];
 
-        if let Some(&variable) = self.cl_variables.get(&(decl_env, name)) {
+        if let Some(&variable) = self.clif_variables.get(&(decl_env, name)) {
             return variable;
         }
 
@@ -183,8 +183,8 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             Binding::Extern(_) | Binding::Function(_) => panic!("functions can only be called"),
         };
 
-        let variable = self.db.cl_type(ty).map(|ty| {
-            let variable = ClVariable::new(self.cl_variables.len());
+        let variable = self.db.clif_type(ty).map(|ty| {
+            let variable = ClifVariable::new(self.clif_variables.len());
             self.builder.declare_var(variable, ty);
 
             if let Some(value) = value {
@@ -194,7 +194,7 @@ impl<'a, 'b> FunctionTranslator<'a, 'b> {
             variable
         });
 
-        self.cl_variables.insert((decl_env, name), variable);
+        self.clif_variables.insert((decl_env, name), variable);
         variable
     }
 }
@@ -275,14 +275,14 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
         let &(decl_env, ref binding) = &bindings[&name];
 
         let func = match binding.clone() {
-            Binding::Extern(signature) => self.db.cl_func_id(true, name, signature)?,
-            Binding::Function(signature) => self.db.cl_func_id(false, name, signature)?,
+            Binding::Extern(signature) => self.db.clif_func_id(true, name, signature)?,
+            Binding::Function(signature) => self.db.clif_func_id(false, name, signature)?,
             Binding::Param(_) | Binding::Variable(_) => panic!("only functions can be called"),
         };
 
         let local_callee = {
-            let Self { db, builder, cl_functions, .. } = self;
-            *cl_functions
+            let Self { db, builder, clif_functions, .. } = self;
+            *clif_functions
                 .entry((decl_env, name))
                 .or_insert_with(|| db.with_module_mut(|module| module.declare_func_in_func(func, &mut builder.func)))
         };
@@ -296,7 +296,7 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
             .collect::<Result<Vec<_>>>()?;
 
         let call = self.builder.ins().call(local_callee, &arg_values);
-        let ty = self.db.cl_type(self.expr_types[&expr_id]);
+        let ty = self.db.clif_type(self.expr_types[&expr_id]);
         Ok(ty.map(|_| self.builder.inst_results(call)[0]))
     }
 
@@ -324,14 +324,14 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
 
     fn map_global_data_addr(&mut self, expr_id: ExprId, expr: GlobalDataAddr) -> Result<Option<Value>> {
         let GlobalDataAddr { name } = expr;
-        let Self { db, builder, cl_data, .. } = self;
-        let data = db.cl_data_id(name)?;
+        let Self { db, builder, clif_data, .. } = self;
+        let data = db.clif_data_id(name)?;
 
-        let local_id = *cl_data
+        let local_id = *clif_data
             .entry(data)
             .or_insert_with(|| db.with_module_mut(|module| module.declare_data_in_func(data, &mut builder.func)));
 
-        let ty = self.db.cl_type(self.expr_types[&expr_id]);
+        let ty = self.db.clif_type(self.expr_types[&expr_id]);
         Ok(Some(builder.ins().symbol_value(ty.unwrap(), local_id)))
     }
 
@@ -348,7 +348,7 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
 
-        let value = self.db.cl_type(self.expr_types[&expr_id]).map(|ty| {
+        let value = self.db.clif_type(self.expr_types[&expr_id]).map(|ty| {
             self.builder.append_block_param(merge_block, ty);
             self.builder.block_params(merge_block)[0]
         });
@@ -380,7 +380,7 @@ impl<'a, 'b> ExprMap for FunctionTranslator<'a, 'b> {
 
     fn map_literal(&mut self, expr_id: ExprId, expr: Literal) -> Result<Option<Value>> {
         let Literal { value } = expr;
-        let ty = self.db.cl_type(self.expr_types[&expr_id]);
+        let ty = self.db.clif_type(self.expr_types[&expr_id]);
         Ok(Some(self.builder.ins().iconst(ty.unwrap(), i64::from(value))))
     }
 

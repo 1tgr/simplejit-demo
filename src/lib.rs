@@ -135,7 +135,7 @@ impl<T> VecExt<T> for Vec<T> {
 
 pub use database::Database;
 pub use intern::{Intern, InternExt};
-pub use jit::{Context, JIT};
+pub use jit::{Context, Jit};
 pub use lower::Lower;
 pub use parse::Parse;
 pub use pretty::{PrettyExt, PrettyPrintExpr, PrettyPrintFunction, PrettyPrintType};

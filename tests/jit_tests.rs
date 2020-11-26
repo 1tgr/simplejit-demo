@@ -1,7 +1,7 @@
 use cranelift::codegen;
 use cranelift::codegen::ir::DisplayFunctionAnnotations;
 use cranelift_module::{DataContext, Module as _};
-use simplejit_demo::{Database, Intern, Lower, Parse, PrettyExt, Result, Source, TargetExt, JIT};
+use simplejit_demo::{Database, Intern, Jit, Lower, Parse, PrettyExt, Result, Source, TargetExt};
 use std::fmt::Write;
 
 fn do_test_pretty(source_text: &str, pretty_text: &str) -> Result<()> {
@@ -26,7 +26,7 @@ fn do_test_ir(source_text: &str, ir: &str) -> Result<()> {
 
     let mut actual_ir = String::new();
     for name in db.function_names()? {
-        let ctx = db.cl_ctx(name)?;
+        let ctx = db.clif_ctx(name)?;
         codegen::write_function(&mut actual_ir, &ctx.func, &DisplayFunctionAnnotations::default())?;
     }
 
@@ -43,14 +43,14 @@ where
     db.set_source(source_text.to_owned());
 
     for name in db.function_names()? {
-        db.cl_ctx(name)?;
+        db.clif_ctx(name)?;
     }
 
     let name = db.intern_ident(name.to_owned());
     let signature = db.function_signature(name)?;
-    let cl_func_id = db.cl_func_id(false, name, signature)?;
+    let cl_func_id = db.clif_func_id(false, name, signature)?;
 
-    let cl_data_id = db.cl_data_id(db.intern_ident("hello_string".to_owned()))?;
+    let cl_data_id = db.clif_data_id(db.intern_ident("hello_string".to_owned()))?;
     let mut data_ctx = DataContext::new();
     data_ctx.define(b"hello world!\0".to_vec().into_boxed_slice());
 
